@@ -7,6 +7,7 @@ import {
   Alert,
   SafeAreaView,
   Image,
+  FlatList,
 } from 'react-native';
 import { AuthService } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
