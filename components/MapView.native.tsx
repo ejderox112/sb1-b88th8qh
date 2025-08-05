@@ -17,11 +17,17 @@ export default function MapViewComponent({
   onPOISelect, 
   floor 
 }: MapViewComponentProps) {
+  const mounted = useRef(true);
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [mapRef, setMapRef] = useState<MapView | null>(null);
 
   useEffect(() => {
+    mounted.current = true;
     getCurrentLocation();
+    
+    return () => {
+      mounted.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -37,6 +43,8 @@ export default function MapViewComponent({
 
   const getCurrentLocation = async () => {
     try {
+      if (!mounted.current) return;
+      
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Hata', 'Konum izni gerekli');
@@ -46,6 +54,8 @@ export default function MapViewComponent({
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
+      
+      if (!mounted.current) return;
       setLocation(currentLocation);
     } catch (error) {
       console.error('Konum alınamadı:', error);
