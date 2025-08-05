@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Alert, Platform } from 'react-native';
-import * as Location from 'expo-location';
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { POI } from '@/types';
 
 interface MapViewComponentProps {
@@ -16,37 +15,14 @@ export default function MapViewComponent({
   onPOISelect, 
   floor 
 }: MapViewComponentProps) {
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
-
-  useEffect(() => {
-    getCurrentLocation();
-  }, []);
-
-  const getCurrentLocation = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Hata', 'Konum izni gerekli');
-        return;
-      }
-
-      const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      setLocation(currentLocation);
-    } catch (error) {
-      console.error('Konum alınamadı:', error);
-      Alert.alert('Hata', 'Konum bilgisi alınamadı');
-    }
-  };
-
   const filteredPOIs = pois.filter(poi => poi.floor === floor && poi.isApproved);
 
   return (
     <View style={styles.container}>
       <View style={styles.placeholder}>
         <Text style={styles.title}>Harita Görünümü</Text>
-        <Text style={styles.subtitle}>
+        <Text style={styles.subtitle}>Web platformunda mevcut değil</Text>
+        <Text style={styles.info}>
           {filteredPOIs.length} konum bulundu (Kat {floor})
         </Text>
         {selectedPOI && (
@@ -81,6 +57,11 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#666',
+    marginBottom: 20,
+  },
+  info: {
+    fontSize: 14,
+    color: '#888',
     marginBottom: 20,
   },
   selectedPOI: {
