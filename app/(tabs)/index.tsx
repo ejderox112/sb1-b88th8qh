@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -26,6 +27,7 @@ import {
 } from 'lucide-react-native';
 
 export default function MapScreen() {
+  const mounted = useRef(true);
   const [user, setUser] = useState<User | null>(null);
   const [pois, setPois] = useState<POI[]>([]);
   const [selectedPOI, setSelectedPOI] = useState<POI | undefined>();
@@ -39,12 +41,19 @@ export default function MapScreen() {
   const authService = new AuthService();
 
   useEffect(() => {
+    mounted.current = true;
     checkUser();
     loadPOIs();
+    
+    return () => {
+      mounted.current = false;
+    };
   }, []);
 
   const checkUser = async () => {
     try {
+      if (!mounted.current) return;
+      
       const currentUser = await authService.getCurrentUser();
       if (currentUser) {
         // Kullanıcı bilgilerini veritabanından al
@@ -68,6 +77,7 @@ export default function MapScreen() {
 
           if (insertError) throw insertError;
           
+          if (!mounted.current) return;
           setUser({
             id: currentUser.id,
             email: currentUser.email!,
@@ -76,6 +86,7 @@ export default function MapScreen() {
             avatar: currentUser.user_metadata?.avatar_url,
           });
         } else if (data) {
+          if (!mounted.current) return;
           setUser(data);
         }
       }
@@ -86,6 +97,8 @@ export default function MapScreen() {
 
   const loadPOIs = async () => {
     try {
+      if (!mounted.current) return;
+      
       const { data, error } = await supabase
         .from('pois')
         .select('*')
@@ -93,6 +106,7 @@ export default function MapScreen() {
         .order('name');
 
       if (error) throw error;
+      if (!mounted.current) return;
       setPois(data || []);
     } catch (error) {
       console.error('POI yükleme hatası:', error);
@@ -101,6 +115,7 @@ export default function MapScreen() {
 
   const handleSignIn = async () => {
     try {
+      if (!mounted.current) return;
       await authService.signInWithGoogle();
       checkUser();
     } catch (error) {
@@ -110,6 +125,7 @@ export default function MapScreen() {
 
   const handleSignOut = async () => {
     try {
+      if (!mounted.current) return;
       await authService.signOut();
       setUser(null);
     } catch (error) {
