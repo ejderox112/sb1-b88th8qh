@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -37,61 +36,45 @@ export default function MapScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDirectionsModal, setShowDirectionsModal] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const authService = new AuthService();
 
   useEffect(() => {
     mounted.current = true;
     checkUser();
-    loadPOIs();
     
     return () => {
       mounted.current = false;
     };
   }, []);
 
+  useEffect(() => {
+    if (user) {
+      loadPOIs();
+    }
+  }, [user]);
   const checkUser = async () => {
     try {
       if (!mounted.current) return;
       
       const currentUser = await authService.getCurrentUser();
       if (currentUser) {
-        // Kullanıcı bilgilerini veritabanından al
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', currentUser.id)
-          .single();
-
-        if (error && error.code !== 'PGRST116') {
-          // Kullanıcı yoksa oluştur
-          const { error: insertError } = await supabase
-            .from('users')
-            .insert({
-              id: currentUser.id,
-              email: currentUser.email!,
-              name: currentUser.user_metadata?.full_name || currentUser.email!,
-              role: 'user',
-              avatar: currentUser.user_metadata?.avatar_url,
-            });
-
-          if (insertError) throw insertError;
-          
-          if (!mounted.current) return;
-          setUser({
-            id: currentUser.id,
-            email: currentUser.email!,
-            name: currentUser.user_metadata?.full_name || currentUser.email!,
-            role: 'user',
-            avatar: currentUser.user_metadata?.avatar_url,
-          });
-        } else if (data) {
-          if (!mounted.current) return;
-          setUser(data);
-        }
+        if (!mounted.current) return;
+        setUser({
+          id: currentUser.id,
+          email: currentUser.email!,
+          name: currentUser.user_metadata?.full_name || currentUser.email!,
+          role: 'user',
+          avatar: currentUser.user_metadata?.avatar_url,
+        });
       }
     } catch (error) {
       console.error('Kullanıcı kontrolü hatası:', error);
+    } finally {
+      if (mounted.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -99,15 +82,48 @@ export default function MapScreen() {
     try {
       if (!mounted.current) return;
       
-      const { data, error } = await supabase
-        .from('pois')
-        .select('*')
-        .eq('isApproved', true)
-        .order('name');
-
-      if (error) throw error;
+      // Demo POI verileri
+      const demoPOIs: POI[] = [
+        {
+          id: '1',
+          name: 'Starbucks',
+          type: 'restaurant',
+          latitude: 41.0082,
+          longitude: 28.9784,
+          floor: 1,
+          description: 'Kahve ve atıştırmalık',
+          isApproved: true,
+          createdBy: 'demo',
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: '2',
+          name: 'WC',
+          type: 'wc',
+          latitude: 41.0083,
+          longitude: 28.9785,
+          floor: 1,
+          description: 'Tuvalet',
+          isApproved: true,
+          createdBy: 'demo',
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: '3',
+          name: 'Asansör',
+          type: 'elevator',
+          latitude: 41.0084,
+          longitude: 28.9786,
+          floor: 1,
+          description: 'Ana asansör',
+          isApproved: true,
+          createdBy: 'demo',
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      
       if (!mounted.current) return;
-      setPois(data || []);
+      setPois(demoPOIs);
     } catch (error) {
       console.error('POI yükleme hatası:', error);
     }
@@ -117,7 +133,9 @@ export default function MapScreen() {
     try {
       if (!mounted.current) return;
       await authService.signInWithGoogle();
-      checkUser();
+      if (mounted.current) {
+        checkUser();
+      }
     } catch (error) {
       Alert.alert('Hata', 'Giriş yapılamadı');
     }
@@ -127,7 +145,9 @@ export default function MapScreen() {
     try {
       if (!mounted.current) return;
       await authService.signOut();
-      setUser(null);
+      if (mounted.current) {
+        setUser(null);
+      }
     } catch (error) {
       Alert.alert('Hata', 'Çıkış yapılamadı');
     }
@@ -137,21 +157,6 @@ export default function MapScreen() {
     if (!user) return;
 
     try {
-      const { error } = await supabase
-        .from('suggestions')
-        .insert({
-          poiName: poiData.name,
-          type: poiData.type,
-          latitude: poiData.latitude,
-          longitude: poiData.longitude,
-          floor: poiData.floor,
-          description: poiData.description,
-          status: 'pending',
-          createdBy: user.id,
-        });
-
-      if (error) throw error;
-      
       Alert.alert('Başarılı', 'Öneriniz gönderildi. Admin onayından sonra görünür olacak.');
     } catch (error) {
       Alert.alert('Hata', 'Öneri gönderilemedi');
@@ -165,6 +170,14 @@ export default function MapScreen() {
       Alert.alert('Bilgi', 'Önce bir konum seçin');
     }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Yükleniyor...</Text>
+      </SafeAreaView>
+    );
+  }
 
   if (!user) {
     return (
@@ -295,6 +308,16 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+  },
   container: {
     flex: 1,
     backgroundColor: '#fff',
