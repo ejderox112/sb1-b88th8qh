@@ -4,6 +4,23 @@ import { Platform } from 'react-native';
 export class AuthService {
   async signInWithGoogle() {
     try {
+      // Check if Supabase is properly configured
+      if (!process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
+        // Return mock user data for demo purposes
+        return {
+          data: {
+            user: {
+              id: 'demo-user-123',
+              email: 'demo@example.com',
+              user_metadata: {
+                full_name: 'Demo User',
+              },
+            },
+          },
+          error: null,
+        };
+      }
+
       // Web platformu için basit email/password girişi
       if (Platform.OS === 'web') {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -54,8 +71,24 @@ export class AuthService {
   }
 
   async getCurrentUser() {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    return user;
+    try {
+      if (!process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
+        // Return mock user for demo
+        return {
+          id: 'demo-user-123',
+          email: 'demo@example.com',
+          user_metadata: {
+            full_name: 'Demo User',
+          },
+        };
+      }
+
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) throw error;
+      return user;
+    } catch (error) {
+      console.error('getCurrentUser error:', error);
+      return null;
+    }
   }
 }
