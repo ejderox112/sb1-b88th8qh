@@ -72,6 +72,7 @@ export default function MapScreen() {
     } catch (error) {
       console.error('Kullanıcı kontrolü hatası:', error);
     } finally {
+      // setLoading'i sadece component mount edilmişse çağır
       if (mounted.current) {
         setLoading(false);
       }
