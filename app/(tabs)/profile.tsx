@@ -9,9 +9,9 @@ import {
   Image,
   FlatList,
 } from 'react-native';
-import { AuthService } from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
-import { User, Suggestion } from '@/types';
+import { AuthService } from '../../lib/auth';
+import { supabase } from '../../lib/supabase';
+import { User, Suggestion } from '../../types';
 import { LogOut, Shield, MapPin, Clock, Check, X } from 'lucide-react-native';
 
 export default function ProfileScreen() {

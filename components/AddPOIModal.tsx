@@ -9,8 +9,8 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { POI } from '@/types';
-import { GeminiService } from '@/lib/gemini';
+import { POI } from '../types';
+import { GeminiService } from '../lib/gemini';
 import { X, MapPin } from 'lucide-react-native';
 
 interface AddPOIModalProps {

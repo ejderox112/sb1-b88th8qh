@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Alert, Platform } from 'react-native';
 import * as Location from 'expo-location';
-import { POI } from '@/types';
+import { POI } from '../types';
 
 interface MapViewComponentProps {
   pois: POI[];

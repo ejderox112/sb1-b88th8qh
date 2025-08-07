@@ -8,14 +8,14 @@ import {
   SafeAreaView,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { supabase } from '@/lib/supabase';
-import { AuthService } from '@/lib/auth';
-import { POI, User } from '@/types';
-import MapViewComponent from '@/components/MapView';
-import POIList from '@/components/POIList';
-import AddPOIModal from '@/components/AddPOIModal';
-import DirectionsModal from '@/components/DirectionsModal';
-import AdminPanel from '@/components/AdminPanel';
+import { supabase } from '../../lib/supabase';
+import { AuthService } from '../../lib/auth';
+import { POI, User } from '../../types';
+import MapViewComponent from '../../components/MapView';
+import POIList from '../../components/POIList';
+import AddPOIModal from '../../components/AddPOIModal';
+import DirectionsModal from '../../components/DirectionsModal';
+import AdminPanel from '../../components/AdminPanel';
 import { 
   Plus, 
   Navigation, 

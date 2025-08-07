@@ -7,8 +7,8 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { POI } from '@/types';
-import { GeminiService } from '@/lib/gemini';
+import { POI } from '../types';
+import { GeminiService } from '../lib/gemini';
 import { X, Navigation, MapPin } from 'lucide-react-native';
 
 interface DirectionsModalProps {

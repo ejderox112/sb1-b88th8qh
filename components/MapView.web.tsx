@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { POI } from '@/types';
+import { POI } from '../types';
 
 interface MapViewComponentProps {
   pois: POI[];

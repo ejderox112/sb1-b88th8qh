@@ -8,8 +8,8 @@ import {
   TextInput,
   SafeAreaView,
 } from 'react-native';
-import { POI } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { POI } from '../../types';
+import { supabase } from '../../lib/supabase';
 import { Search, MapPin, Building, Navigation } from 'lucide-react-native';
 
 export default function LocationsScreen() {

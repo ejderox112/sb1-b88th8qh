@@ -8,8 +8,8 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { Suggestion, POI } from '@/types';
-import { supabase } from '@/lib/supabase';
+import { Suggestion, POI } from '../types';
+import { supabase } from '../lib/supabase';
 import { Check, X, Clock, Eye } from 'lucide-react-native';
 
 interface AdminPanelProps {

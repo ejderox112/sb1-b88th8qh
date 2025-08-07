@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
-import { POI } from '@/types';
+import { POI } from '../types';
 import { MapPin, Building, Navigation } from 'lucide-react-native';
 
 interface POIListProps {
