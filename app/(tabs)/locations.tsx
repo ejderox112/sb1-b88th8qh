@@ -20,27 +20,51 @@ export default function LocationsScreen() {
   const [selectedType, setSelectedType] = useState<POI['type'] | null>(null);
 
   useEffect(() => {
-    loadPOIs();
+    // Demo POI verileri yükle
+    const demoPOIs: POI[] = [
+      {
+        id: '1',
+        name: 'Starbucks',
+        type: 'restaurant',
+        latitude: 41.0082,
+        longitude: 28.9784,
+        floor: 1,
+        description: 'Kahve ve atıştırmalık',
+        isApproved: true,
+        createdBy: 'demo',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: '2',
+        name: 'WC',
+        type: 'wc',
+        latitude: 41.0083,
+        longitude: 28.9785,
+        floor: 1,
+        description: 'Tuvalet',
+        isApproved: true,
+        createdBy: 'demo',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: '3',
+        name: 'Asansör',
+        type: 'elevator',
+        latitude: 41.0084,
+        longitude: 28.9786,
+        floor: 2,
+        description: 'Ana asansör',
+        isApproved: true,
+        createdBy: 'demo',
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    setPois(demoPOIs);
   }, []);
 
   useEffect(() => {
     filterPOIs();
   }, [pois, searchQuery, selectedFloor, selectedType]);
-
-  const loadPOIs = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('pois')
-        .select('*')
-        .eq('isApproved', true)
-        .order('name');
-
-      if (error) throw error;
-      setPois(data || []);
-    } catch (error) {
-      console.error('POI yükleme hatası:', error);
-    }
-  };
 
   const filterPOIs = () => {
     let filtered = pois;
