@@ -8,6 +8,13 @@ declare global {
 
 export function useFrameworkReady() {
   useEffect(() => {
-    window.frameworkReady?.();
+    // Framework hazır olduğunu bildirmek için timeout kullan
+    const timer = setTimeout(() => {
+      if (typeof window !== 'undefined' && window.frameworkReady) {
+        window.frameworkReady();
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
   });
 }
