@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -7,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
@@ -29,6 +29,7 @@ import {
 export default function MapScreen() {
   const mounted = useRef(true);
   const [user, setUser] = useState<User | null>(null);
+  const [initializing, setInitializing] = useState(true);
   const [pois, setPois] = useState<POI[]>([]);
   const [selectedPOI, setSelectedPOI] = useState<POI | undefined>();
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
@@ -42,13 +43,28 @@ export default function MapScreen() {
 
   useEffect(() => {
     mounted.current = true;
-    checkUser();
-    loadPOIs();
+    initializeApp();
     
     return () => {
       mounted.current = false;
     };
   }, []);
+
+  const initializeApp = async () => {
+    try {
+      setInitializing(true);
+      await Promise.all([
+        checkUser(),
+        loadPOIs()
+      ]);
+    } catch (error) {
+      console.error('Uygulama başlatma hatası:', error);
+    } finally {
+      if (mounted.current) {
+        setInitializing(false);
+      }
+    }
+  };
 
   const checkUser = async () => {
     try {
@@ -165,6 +181,16 @@ export default function MapScreen() {
       Alert.alert('Bilgi', 'Önce bir konum seçin');
     }
   };
+
+  // Uygulama başlatılıyorsa loading göster
+  if (initializing) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Uygulama başlatılıyor...</Text>
+      </SafeAreaView>
+    );
+  }
 
   if (!user) {
     return (
@@ -302,6 +328,17 @@ const styles = StyleSheet.create({
   authContainer: {
     flex: 1,
     backgroundColor: '#f8f9fa',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 12,
   },
   authContent: {
     flex: 1,
