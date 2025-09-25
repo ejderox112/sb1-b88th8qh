@@ -26,6 +26,8 @@ import {
   LogOut 
 } from 'lucide-react-native';
 
+const authService = new AuthService();
+
 export default function MapScreen() {
   const mounted = useRef(true);
   const [user, setUser] = useState<User | null>(null);
@@ -39,7 +41,6 @@ export default function MapScreen() {
   const [showDirectionsModal, setShowDirectionsModal] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
-  const authService = new AuthService();
 
   useEffect(() => {
     mounted.current = true;

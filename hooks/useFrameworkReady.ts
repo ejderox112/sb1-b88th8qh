@@ -16,5 +16,5 @@ export function useFrameworkReady() {
     }, 100);
 
     return () => clearTimeout(timer);
-  });
+  }, []);
 }
