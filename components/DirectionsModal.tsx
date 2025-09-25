@@ -70,7 +70,7 @@ export default function DirectionsModal({
             <View style={styles.locationRow}>
               <MapPin size={20} color="#28a745" />
               <Text style={styles.locationText}>
-                Başlangıç: {fromPOI ? fromPOI.name : 'Mevcut Konumunuz'}
+                Başlangıç: Mevcut Konumunuz
               </Text>
             </View>
             <View style={styles.locationRow}>
