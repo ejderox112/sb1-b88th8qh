@@ -94,17 +94,19 @@ export default function MapScreen() {
 
           if (insertError) throw insertError;
           
-          if (!mounted.current) return;
-          setUser({
-            id: currentUser.id,
-            email: currentUser.email!,
-            name: currentUser.user_metadata?.full_name || currentUser.email!,
-            role: 'user',
-            avatar: currentUser.user_metadata?.avatar_url,
-          });
+          if (mounted.current) {
+            setUser({
+              id: currentUser.id,
+              email: currentUser.email!,
+              name: currentUser.user_metadata?.full_name || currentUser.email!,
+              role: 'user',
+              avatar: currentUser.user_metadata?.avatar_url,
+            });
+          }
         } else if (data) {
-          if (!mounted.current) return;
-          setUser(data);
+          if (mounted.current) {
+            setUser(data);
+          }
         }
       }
     } catch (error) {
@@ -123,8 +125,9 @@ export default function MapScreen() {
         .order('name');
 
       if (error) throw error;
-      if (!mounted.current) return;
-      setPois(data || []);
+      if (mounted.current) {
+        setPois(data || []);
+      }
     } catch (error) {
       console.error('POI yükleme hatası:', error);
     }
@@ -132,9 +135,10 @@ export default function MapScreen() {
 
   const handleSignIn = async () => {
     try {
-      if (!mounted.current) return;
-      await authService.signInWithGoogle();
-      checkUser();
+      if (mounted.current) {
+        await authService.signInWithGoogle();
+        checkUser();
+      }
     } catch (error) {
       Alert.alert('Hata', 'Giriş yapılamadı');
     }
@@ -142,9 +146,10 @@ export default function MapScreen() {
 
   const handleSignOut = async () => {
     try {
-      if (!mounted.current) return;
-      await authService.signOut();
-      setUser(null);
+      if (mounted.current) {
+        await authService.signOut();
+        setUser(null);
+      }
     } catch (error) {
       Alert.alert('Hata', 'Çıkış yapılamadı');
     }
