@@ -51,16 +51,17 @@ export default function AddPOIModal({
       return;
     }
 
-    if (!currentLocation) {
-      Alert.alert('Hata', 'Konum bilgisi alınamadı');
-      return;
-    }
+    // Demo koordinatları kullan
+    const demoLocation = currentLocation || {
+      latitude: 41.0082,
+      longitude: 28.9784
+    };
 
     onSubmit({
       name: name.trim(),
       type,
-      latitude: currentLocation.latitude,
-      longitude: currentLocation.longitude,
+      latitude: demoLocation.latitude,
+      longitude: demoLocation.longitude,
       floor,
       description: description.trim() || undefined,
     });

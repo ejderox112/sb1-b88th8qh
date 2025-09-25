@@ -7,15 +7,15 @@ export class AuthService {
       // Web platformu için basit email/password girişi
       if (Platform.OS === 'web') {
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: 'test@example.com',
-          password: 'test123456',
+          email: 'demo@example.com',
+          password: 'demo123456',
         });
         
         if (error) {
           // Kullanıcı yoksa oluştur
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: 'test@example.com',
-            password: 'test123456',
+            email: 'demo@example.com',
+            password: 'demo123456',
           });
           
           if (signUpError) throw signUpError;
@@ -26,14 +26,14 @@ export class AuthService {
       } else {
         // Native platformlar için Google OAuth (şimdilik basit giriş)
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: 'test@example.com',
-          password: 'test123456',
+          email: 'demo@example.com',
+          password: 'demo123456',
         });
         
         if (error) {
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: 'test@example.com',
-            password: 'test123456',
+            email: 'demo@example.com',
+            password: 'demo123456',
           });
           
           if (signUpError) throw signUpError;

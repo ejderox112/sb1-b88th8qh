@@ -55,7 +55,8 @@ export default function MapScreen() {
       setInitializing(true);
       await Promise.all([
         checkUser(),
-        loadPOIs()
+        loadPOIs(),
+        getCurrentLocation()
       ]);
     } catch (error) {
       console.error('Uygulama başlatma hatası:', error);
@@ -63,6 +64,27 @@ export default function MapScreen() {
       if (mounted.current) {
         setInitializing(false);
       }
+    }
+  };
+
+  const getCurrentLocation = async () => {
+    try {
+      if (!mounted.current) return;
+      
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Konum izni verilmedi');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      
+      if (!mounted.current) return;
+      setCurrentLocation(location);
+    } catch (error) {
+      console.error('Konum alınamadı:', error);
     }
   };
 
