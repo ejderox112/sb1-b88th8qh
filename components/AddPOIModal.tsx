@@ -43,7 +43,7 @@ export default function AddPOIModal({
   const [description, setDescription] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const geminiService = new GeminiService();
+  const geminiService = GeminiService.getInstance();
 
   const handleSubmit = () => {
     if (!name.trim()) {
