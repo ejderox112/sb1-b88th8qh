@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import * as Location from 'expo-location';
 import { POI } from '../types';
 
@@ -16,7 +16,7 @@ export default function MapViewComponent({
   onPOISelect, 
   floor 
 }: MapViewComponentProps) {
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [, setLocation] = useState<Location.LocationObject | null>(null);
 
   useEffect(() => {
     getCurrentLocation();

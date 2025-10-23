@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,13 +19,9 @@ export default function ProfileScreen() {
   const [userSuggestions, setUserSuggestions] = useState<Suggestion[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const authService = new AuthService();
+  const authService = useMemo(() => new AuthService(), []);
 
-  useEffect(() => {
-    loadUserData();
-  }, []);
-
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
     try {
       const currentUser = await authService.getCurrentUser();
       if (currentUser) {
@@ -54,7 +50,11 @@ export default function ProfileScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [authService]);
+
+  useEffect(() => {
+    loadUserData();
+  }, [loadUserData]);
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -68,7 +68,7 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await authService.signOut();
-            } catch (error) {
+            } catch {
               Alert.alert('Hata', 'Çıkış yapılamadı');
             }
           },

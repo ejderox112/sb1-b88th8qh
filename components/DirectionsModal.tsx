@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -29,15 +29,9 @@ export default function DirectionsModal({
   const [directions, setDirections] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
-  const geminiService = new GeminiService();
+  const geminiService = useMemo(() => new GeminiService(), []);
 
-  useEffect(() => {
-    if (visible && toPOI) {
-      generateDirections();
-    }
-  }, [visible, fromPOI, toPOI]);
-
-  const generateDirections = async () => {
+  const generateDirections = useCallback(async () => {
     if (!toPOI) return;
 
     setLoading(true);
@@ -48,12 +42,18 @@ export default function DirectionsModal({
 
       const directionsText = await geminiService.getDirections(from, to, floor);
       setDirections(directionsText);
-    } catch (error) {
+    } catch {
       setDirections('Yön tarifi oluşturulamadı. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [toPOI, fromPOI, geminiService]);
+
+  useEffect(() => {
+    if (visible && toPOI) {
+      generateDirections();
+    }
+  }, [visible, fromPOI, toPOI, generateDirections]);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
