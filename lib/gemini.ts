@@ -4,12 +4,20 @@ const API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 
 export class GeminiService {
   private model: any = null;
+  private static instance: GeminiService | null = null;
 
   constructor() {
-    if (API_KEY && API_KEY !== 'your_gemini_api_key_hereAIzaSyA6Hj39n8-P-RH6oEmOS1CJcVWUqPB1PXw') {
+    if (API_KEY && API_KEY !== 'your_gemini_api_key_here') {
       const genAI = new GoogleGenerativeAI(API_KEY);
       this.model = genAI.getGenerativeModel({ model: 'gemini-pro' });
     }
+  }
+
+  static getInstance(): GeminiService {
+    if (!GeminiService.instance) {
+      GeminiService.instance = new GeminiService();
+    }
+    return GeminiService.instance;
   }
 
   async getDirections(from: string, to: string, floor: number): Promise<string> {

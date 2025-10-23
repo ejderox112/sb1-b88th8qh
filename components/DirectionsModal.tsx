@@ -29,7 +29,7 @@ export default function DirectionsModal({
   const [directions, setDirections] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
-  const geminiService = new GeminiService();
+  const geminiService = GeminiService.getInstance();
 
   useEffect(() => {
     if (visible && toPOI) {

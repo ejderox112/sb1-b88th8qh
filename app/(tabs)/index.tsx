@@ -38,7 +38,7 @@ export default function MapScreen() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const authService = new AuthService();
+  const authService = AuthService.getInstance();
 
   useEffect(() => {
     mounted.current = true;

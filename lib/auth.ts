@@ -2,6 +2,15 @@ import { supabase } from './supabase';
 import { Platform } from 'react-native';
 
 export class AuthService {
+  private static instance: AuthService | null = null;
+
+  static getInstance(): AuthService {
+    if (!AuthService.instance) {
+      AuthService.instance = new AuthService();
+    }
+    return AuthService.instance;
+  }
+
   async signInWithGoogle() {
     try {
       // Check if Supabase is properly configured
