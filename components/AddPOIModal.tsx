@@ -85,7 +85,7 @@ export default function AddPOIModal({
         description
       );
       setName(suggestedName);
-    } catch (error) {
+    } catch {
       Alert.alert('Hata', 'AI önerisi alınamadı');
     } finally {
       setIsGenerating(false);

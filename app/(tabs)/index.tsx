@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   SafeAreaView,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { supabase } from '../../lib/supabase';
 import { AuthService } from '../../lib/auth';
 import { POI, User } from '../../types';
 import MapViewComponent from '../../components/MapView';
@@ -30,7 +29,7 @@ export default function MapScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [pois, setPois] = useState<POI[]>([]);
   const [selectedPOI, setSelectedPOI] = useState<POI | undefined>();
-  const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
+  const [currentLocation] = useState<Location.LocationObject | null>(null);
   const [currentFloor, setCurrentFloor] = useState(1);
   const [showPOIList, setShowPOIList] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -38,23 +37,9 @@ export default function MapScreen() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const authService = new AuthService();
+  const authService = useMemo(() => new AuthService(), []);
 
-  useEffect(() => {
-    mounted.current = true;
-    checkUser();
-    
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      loadPOIs();
-    }
-  }, [user]);
-  const checkUser = async () => {
+  const checkUser = useCallback(async () => {
     try {
       if (!mounted.current) return;
       
@@ -77,9 +62,9 @@ export default function MapScreen() {
         setLoading(false);
       }
     }
-  };
+  }, [authService]);
 
-  const loadPOIs = async () => {
+  const loadPOIs = useCallback(async () => {
     try {
       if (!mounted.current) return;
       
@@ -128,7 +113,22 @@ export default function MapScreen() {
     } catch (error) {
       console.error('POI yükleme hatası:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    checkUser();
+    
+    return () => {
+      mounted.current = false;
+    };
+  }, [checkUser]);
+
+  useEffect(() => {
+    if (user) {
+      loadPOIs();
+    }
+  }, [user, loadPOIs]);
 
   const handleSignIn = async () => {
     try {
@@ -137,7 +137,7 @@ export default function MapScreen() {
       if (mounted.current) {
         checkUser();
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Hata', 'Giriş yapılamadı');
     }
   };
@@ -149,7 +149,7 @@ export default function MapScreen() {
       if (mounted.current) {
         setUser(null);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Hata', 'Çıkış yapılamadı');
     }
   };
@@ -159,7 +159,7 @@ export default function MapScreen() {
 
     try {
       Alert.alert('Başarılı', 'Öneriniz gönderildi. Admin onayından sonra görünür olacak.');
-    } catch (error) {
+    } catch {
       Alert.alert('Hata', 'Öneri gönderilemedi');
     }
   };

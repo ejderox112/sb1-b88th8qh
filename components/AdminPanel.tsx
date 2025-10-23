@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Suggestion, POI } from '../types';
 import { supabase } from '../lib/supabase';
-import { Check, X, Clock, Eye } from 'lucide-react-native';
+import { Check, X, Clock } from 'lucide-react-native';
 
 interface AdminPanelProps {
   visible: boolean;
@@ -38,7 +38,7 @@ export default function AdminPanel({ visible, onClose, onPOIApproved }: AdminPan
 
       if (error) throw error;
       setSuggestions(data || []);
-    } catch (error) {
+    } catch {
       Alert.alert('Hata', 'Öneriler yüklenemedi');
     } finally {
       setLoading(false);
@@ -83,7 +83,7 @@ export default function AdminPanel({ visible, onClose, onPOIApproved }: AdminPan
       );
       
       loadSuggestions();
-    } catch (error) {
+    } catch {
       Alert.alert('Hata', 'İşlem gerçekleştirilemedi');
     }
   };
