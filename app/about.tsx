@@ -1,13 +1,9 @@
-import { View, Text, Button } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text } from 'react-native';
 
-export default function HomeScreen() {
-  const router = useRouter();
-
+export default function AboutScreen() {
   return (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Ana Sayfa</Text>
-      <Button title="Hakkında Git" onPress={() => router.push('/about')} />
+      <Text>Hakkında Sayfası</Text>
     </View>
   );
 }
