@@ -1,14 +1,14 @@
 {
   "name": "bolt-expo-starter",
-  "main": "expo-router/entry",
   "version": "1.0.0",
   "private": true,
+  "main": "expo-router/entry",
   "scripts": {
     "dev": "EXPO_NO_TELEMETRY=1 npx expo start",
+    "build": "expo export --platform web",
     "build:web": "expo export --platform web",
     "lint": "expo lint",
-    "test": "echo \"No tests specified\" && exit 0",
-    "build": "expo export --platform web"
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
