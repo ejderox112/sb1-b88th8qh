@@ -1,18 +1,11 @@
-// taskRules.ts
-// Görev 56: Görev tamamlama, XP dağıtımı ve teslim kontrolü
+export function isValidTaskTitle(title: string): boolean {
+  return title.length >= 5 && title.length <= 100;
+}
 
-type TaskStatus = 'pending' | 'completed' | 'rejected';
+export function isValidXP(xp: number): boolean {
+  return xp > 0 && xp <= 500;
+}
 
-export function isTaskCompleted(status: TaskStatus): boolean {
+export function isTaskCompleted(status: string): boolean {
   return status === 'completed';
-}
-
-export function getXPForCompletion(baseXP: number, status: TaskStatus): number {
-  if (status === 'completed') return baseXP;
-  if (status === 'rejected') return -Math.floor(baseXP / 2); // Ceza
-  return 0;
-}
-
-export function canSubmitTask(status: TaskStatus): boolean {
-  return status === 'pending';
 }
