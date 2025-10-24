@@ -1,31 +1,28 @@
 // flagRules.ts
-// Görev 50: İçerik işaretleme kuralları + şikayet eşiği + sistemsel gizleme
+// Görev 52: İçerik şikayet sistemi ve kötüye kullanım kontrolü
 
-type FlaggedContent = {
-  id: string;
-  type: 'photo' | 'task' | 'message';
-  flagCount: number;
-  createdAt: string;
+type ContentType = 'photo' | 'task' | 'comment';
+
+const FLAG_THRESHOLD: Record<ContentType, number> = {
+  photo: 3,
+  task: 5,
+  comment: 2,
 };
 
-export function isContentFlagged(content: FlaggedContent): boolean {
-  return content.flagCount >= 3;
+export function isFlaggedEnough(type: ContentType, flagCount: number): boolean {
+  const threshold = FLAG_THRESHOLD[type] ?? 3;
+  return flagCount >= threshold;
 }
 
-export function shouldAutoHide(content: FlaggedContent): boolean {
-  // 5+ şikayet varsa sistemsel olarak gizlenir
-  return content.flagCount >= 5;
-}
-
-export function getFlagLabel(type: FlaggedContent['type']): string {
+export function getFlagReason(type: ContentType): string {
   switch (type) {
     case 'photo':
-      return '🚫 Fotoğraf Şikayeti';
+      return 'Uygunsuz görsel';
     case 'task':
-      return '⚠️ Görev Şikayeti';
-    case 'message':
-      return '💬 Mesaj Şikayeti';
+      return 'Spam görev';
+    case 'comment':
+      return 'Hakaret veya kötü dil';
     default:
-      return '❗ İçerik Şikayeti';
+      return 'Şikayet edildi';
   }
 }
