@@ -1,58 +1,72 @@
-import { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, Button, TextInput, FlatList, StyleSheet } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-const EMOJIS = ['👍', '🔥', '😂', '💡', '👎'];
+const EMOJIS = ['👏', '😄', '❤️', '😮'];
 
-export default function TaskFeedbackScreen() {
-  const [comments, setComments] = useState([]);
-  const [taskId, setTaskId] = useState(''); // Görev ID dışarıdan alınabilir
+export default function TaskFeedbackScreen({ taskId, targetUserId }) {
+  const [comment, setComment] = useState('');
+  const [feedbacks, setFeedbacks] = useState([]);
 
   useEffect(() => {
-    if (taskId) fetchComments();
-  }, [taskId]);
+    fetchFeedbacks();
+  }, []);
 
-  const fetchComments = async () => {
+  const fetchFeedbacks = async () => {
     const { data } = await supabase
-      .from('task_comments')
-      .select('id, user_id, text, reactions')
+      .from('task_feedback')
+      .select('*')
       .eq('task_id', taskId);
-    setComments(data);
+    setFeedbacks(data);
   };
 
-  const reactToComment = async (commentId, emoji) => {
-    const { data } = await supabase
-      .from('task_comments')
-      .select('reactions')
-      .eq('id', commentId)
-      .single();
+  const sendEmoji = async emoji => {
+    const user = await supabase.auth.getUser();
+    await supabase.from('task_feedback').insert({
+      task_id: taskId,
+      sender_id: user.data.user.id,
+      receiver_id: targetUserId,
+      emoji,
+      created_at: new Date().toISOString(),
+    });
+    fetchFeedbacks();
+  };
 
-    const reactions = data?.reactions || {};
-    reactions[emoji] = (reactions[emoji] || 0) + 1;
-
-    await supabase.from('task_comments').update({ reactions }).eq('id', commentId);
-    fetchComments();
+  const sendComment = async () => {
+    const user = await supabase.auth.getUser();
+    await supabase.from('task_feedback').insert({
+      task_id: taskId,
+      sender_id: user.data.user.id,
+      receiver_id: targetUserId,
+      comment,
+      created_at: new Date().toISOString(),
+    });
+    setComment('');
+    fetchFeedbacks();
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Görev Geri Bildirimleri</Text>
+      <Text style={styles.title}>🎉 Görev Tepkileri</Text>
+      <View style={styles.emojiRow}>
+        {EMOJIS.map(e => (
+          <Button key={e} title={e} onPress={() => sendEmoji(e)} />
+        ))}
+      </View>
+      <TextInput
+        style={styles.input}
+        placeholder="Yorum yaz..."
+        value={comment}
+        onChangeText={setComment}
+      />
+      <Button title="Yorumu Gönder" onPress={sendComment} />
       <FlatList
-        data={comments}
+        data={feedbacks}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Text>{item.text}</Text>
-            <View style={styles.reactions}>
-              {EMOJIS.map(emoji => (
-                <TouchableOpacity key={emoji} onPress={() => reactToComment(item.id, emoji)}>
-                  <Text style={styles.emoji}>
-                    {emoji} {item.reactions?.[emoji] || 0}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+          <Text style={styles.feedback}>
+            {item.emoji || ''} {item.comment || ''} — @{item.sender_id.slice(0, 6)}
+          </Text>
         )}
       />
     </View>
@@ -61,13 +75,8 @@ export default function TaskFeedbackScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 20 },
-  title: { fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
-  card: {
-    padding: 10,
-    marginVertical: 5,
-    backgroundColor: '#eee',
-    borderRadius: 8,
-  },
-  reactions: { flexDirection: 'row', marginTop: 5 },
-  emoji: { marginRight: 10, fontSize: 18 },
+  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
+  emojiRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 10 },
+  input: { borderWidth: 1, padding: 8, marginBottom: 10 },
+  feedback: { paddingVertical: 4 },
 });
