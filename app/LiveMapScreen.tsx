@@ -1,54 +1,71 @@
 import { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 
 export default function LiveMapScreen() {
   const [location, setLocation] = useState(null);
-  const [others, setOthers] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [myLevel, setMyLevel] = useState(1);
 
   useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-
-      let loc = await Location.getCurrentPositionAsync({});
-      setLocation(loc.coords);
-
-      const user = await supabase.auth.getUser();
-      await supabase.from('live_locations').upsert({
-        user_id: user.data.user.id,
-        lat: loc.coords.latitude,
-        lng: loc.coords.longitude,
-        updated_at: new Date().toISOString(),
-      });
-    })();
-
-    fetchOthers();
-
-    const channel = supabase
-      .channel('live_locations')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'live_locations' }, payload => {
-        fetchOthers();
-      })
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
+    getLocationAndLevel();
+    const interval = setInterval(() => {
+      getLocationAndLevel();
+      fetchNearbyUsers();
+      fetchActiveTasks();
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  const fetchOthers = async () => {
-    const user = await supabase.auth.getUser();
-    const { data } = await supabase
-      .from('live_locations')
-      .select('*')
-      .neq('user_id', user.data.user.id);
+  const getLocationAndLevel = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return;
 
-    setOthers(data);
+    const loc = await Location.getCurrentPositionAsync({});
+    setLocation(loc.coords);
+
+    const user = await supabase.auth.getUser();
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('level')
+      .eq('id', user.data.user.id)
+      .single();
+
+    setMyLevel(profile.level);
+
+    await supabase.from('location_logs').insert({
+      user_id: user.data.user.id,
+      lat: loc.coords.latitude,
+      lng: loc.coords.longitude,
+      updated_at: new Date().toISOString(),
+    });
+  };
+
+  const fetchNearbyUsers = async () => {
+    const { data: allUsers } = await supabase
+      .from('location_logs')
+      .select('user_id, lat, lng, profiles(nickname, avatar_url, level)')
+      .order('updated_at', { ascending: false })
+      .limit(50);
+
+    const filtered = filterVisibleUsers(location.latitude, location.longitude, myLevel, allUsers);
+    setUsers(filtered);
+  };
+
+  const fetchActiveTasks = async () => {
+    const { data } = await supabase
+      .from('tasks')
+      .select('id, title, lat, lng')
+      .eq('active', true);
+    setTasks(data);
   };
 
   return (
     <View style={styles.container}>
+      <Text style={styles.title}>🗺️ Canlı Görev Haritası</Text>
       {location && (
         <MapView
           style={styles.map}
@@ -61,15 +78,24 @@ export default function LiveMapScreen() {
         >
           <Marker
             coordinate={{ latitude: location.latitude, longitude: location.longitude }}
-            title="Sen"
+            title="Ben"
             pinColor="blue"
           />
-          {others.map(user => (
+          {users.map(u => (
             <Marker
-              key={user.id}
-              coordinate={{ latitude: user.lat, longitude: user.lng }}
-              title="Diğer"
-              pinColor="green"
+              key={u.user_id}
+              coordinate={{ latitude: u.lat, longitude: u.lng }}
+              title={u.profiles.nickname}
+              description={`Seviye ${u.profiles.level}`}
+              image={{ uri: u.profiles.avatar_url }}
+            />
+          ))}
+          {tasks.map(t => (
+            <Marker
+              key={t.id}
+              coordinate={{ latitude: t.lat, longitude: t.lng }}
+              title={t.title}
+              pinColor="orange"
             />
           ))}
         </MapView>
@@ -80,5 +106,6 @@ export default function LiveMapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  title: { fontSize: 22, fontWeight: 'bold', padding: 10 },
   map: { flex: 1 },
 });
