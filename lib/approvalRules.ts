@@ -1,28 +1,14 @@
-// approvalRules.ts
-// Görev 51: İçerik türüne göre admin/moderator onay mantığı
-
-type ContentType = 'photo' | 'task' | 'badge' | 'space';
-
-export function requiresApproval(type: ContentType): boolean {
-  switch (type) {
-    case 'photo':
-    case 'badge':
-      return true; // Görsel ve rozetler manuel onay gerektirir
-    case 'task':
-    case 'space':
-      return false; // Görev ve mekânlar sistemsel olarak eklenebilir
-    default:
-      return true;
-  }
+export function isApprovalValid(
+  approved_by: string,
+  approved_at: string
+): boolean {
+  return approved_by.length > 0 && !isNaN(Date.parse(approved_at));
 }
 
-export function getApproverRole(type: ContentType): 'admin' | 'moderator' {
-  switch (type) {
-    case 'photo':
-      return 'moderator'; // Fotoğraflar topluluk moderatörleri tarafından incelenir
-    case 'badge':
-      return 'admin'; // Rozetler sistem yöneticisi tarafından atanır
-    default:
-      return 'moderator';
-  }
+export function isRejected(status: string): boolean {
+  return status === 'rejected';
+}
+
+export function isPending(status: string): boolean {
+  return status === 'pending';
 }
