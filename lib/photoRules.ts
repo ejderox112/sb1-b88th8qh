@@ -1,17 +1,11 @@
-// photoRules.ts
-// Görev 55: Fotoğraf hash kontrolü, spam önleme ve onay durumu
-
-const APPROVAL_REQUIRED = true;
-
-export function generatePhotoHash(photoUrl: string): string {
-  // Basit hash üretimi (gerçek projede daha güvenli algoritma gerekir)
-  return btoa(photoUrl).slice(0, 12);
+export function isValidPhotoURL(url: string): boolean {
+  return url.startsWith('https://') && url.includes('.jpg');
 }
 
-export function isDuplicatePhoto(newHash: string, existingHashes: string[]): boolean {
-  return existingHashes.includes(newHash);
+export function isPhotoApproved(approved: boolean): boolean {
+  return approved === true;
 }
 
-export function requiresPhotoApproval(): boolean {
-  return APPROVAL_REQUIRED;
+export function isHashUnique(hash: string, existingHashes: string[]): boolean {
+  return !existingHashes.includes(hash);
 }
