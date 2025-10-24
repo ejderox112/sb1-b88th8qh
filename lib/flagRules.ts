@@ -1,28 +1,12 @@
-// flagRules.ts
-// Görev 52: İçerik şikayet sistemi ve kötüye kullanım kontrolü
-
-type ContentType = 'photo' | 'task' | 'comment';
-
-const FLAG_THRESHOLD: Record<ContentType, number> = {
-  photo: 3,
-  task: 5,
-  comment: 2,
-};
-
-export function isFlaggedEnough(type: ContentType, flagCount: number): boolean {
-  const threshold = FLAG_THRESHOLD[type] ?? 3;
-  return flagCount >= threshold;
+export function isFlagReasonValid(reason: string): boolean {
+  return reason.length >= 5 && reason.length <= 200;
 }
 
-export function getFlagReason(type: ContentType): string {
-  switch (type) {
-    case 'photo':
-      return 'Uygunsuz görsel';
-    case 'task':
-      return 'Spam görev';
-    case 'comment':
-      return 'Hakaret veya kötü dil';
-    default:
-      return 'Şikayet edildi';
-  }
+export function isFlagged(flagCount: number): boolean {
+  return flagCount > 0;
+}
+
+export function isSpam(reason: string): boolean {
+  const spamKeywords = ['reklam', 'link', 'para', 'indirim', 'takip et'];
+  return spamKeywords.some(keyword => reason.toLowerCase().includes(keyword));
 }
