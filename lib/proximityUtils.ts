@@ -1,5 +1,5 @@
 export function isWithinRadius(userLat, userLng, targetLat, targetLng, radiusMeters) {
-  const R = 6371000; // Dünya yarıçapı (metre)
+  const R = 6371000;
   const toRad = deg => deg * Math.PI / 180;
 
   const dLat = toRad(targetLat - userLat);
@@ -13,4 +13,15 @@ export function isWithinRadius(userLat, userLng, targetLat, targetLng, radiusMet
   const distance = R * c;
 
   return distance <= radiusMeters;
+}
+
+export function filterVisibleUsers(myLat, myLng, myLevel, allUsers) {
+  const radius = myLevel >= 40 ? 500 : 50;
+  const minLevel = myLevel >= 40 ? 1 : 10;
+
+  return allUsers.filter(
+    ({ lat, lng, profiles }) =>
+      profiles.level >= minLevel &&
+      isWithinRadius(myLat, myLng, lat, lng, radius)
+  );
 }
