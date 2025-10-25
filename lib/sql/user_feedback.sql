@@ -2,13 +2,17 @@
 CREATE TABLE IF NOT EXISTS public.user_feedback (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
-  user_id uuid,
-  feedback_type text NOT NULL CHECK (feedback_type IN ('bug', 'suggestion', 'praise', 'other')),
-  rating int CHECK (rating BETWEEN 1 AND 5),
+  user_id uuid NOT NULL,
+  feedback_type text NOT NULL CHECK (feedback_type IN (
+    'bug', 'suggestion', 'rating', 'question', 'other'
+  )),
   message text,
-  context jsonb, -- e.g. { "screen": "settings", "device": "mobile" }
-  responded boolean DEFAULT false,
-  responded_at timestamptz,
+  rating int CHECK (rating >= 1 AND rating <= 5),
+  context jsonb, -- e.g. { "screen": "settings", "language": "tr", "device": "mobile" }
+  status text CHECK (status IN ('new', 'reviewed', 'resolved', 'archived')) DEFAULT 'new',
+  submitted_at timestamptz DEFAULT now(),
+  reviewed_by uuid,
+  reviewed_at timestamptz,
   created_at timestamptz DEFAULT now()
 );
 
@@ -31,7 +35,7 @@ CREATE POLICY user_feedback_select_policy
     tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
     AND (
       user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-      OR (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+      OR (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'support', 'product')
     )
   );
 
@@ -41,6 +45,7 @@ CREATE POLICY user_feedback_insert_policy
   TO authenticated
   WITH CHECK (
     tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
+    AND user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
   );
 
 CREATE POLICY user_feedback_update_policy
@@ -48,10 +53,10 @@ CREATE POLICY user_feedback_update_policy
   FOR UPDATE
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'support', 'product')
     AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   )
   WITH CHECK (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'support', 'product')
     AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
