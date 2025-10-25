@@ -1,100 +1,75 @@
 -- 1) Tablo Oluşturma
-CREATE TABLE IF NOT EXISTS public.notifications (
+CREATE TABLE IF NOT EXISTS public.notifications_queue (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  tenant_id uuid,
-  message text NOT NULL,
-  read boolean DEFAULT false,
-  created_at timestamp DEFAULT now()
+  tenant_id uuid NOT NULL,
+  user_id uuid,
+  channel text NOT NULL CHECK (channel IN ('email', 'push', 'sms')),
+  payload jsonb NOT NULL, -- e.g. { "subject": "...", "body": "...", "target": "..." }
+  scheduled_at timestamptz DEFAULT now(),
+  sent_at timestamptz,
+  status text DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'cancelled')),
+  error text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
 );
 
 -- 2) RLS Etkinleştirme
-ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications_queue ENABLE ROW LEVEL SECURITY;
 
 -- 3) İndeks
-CREATE INDEX IF NOT EXISTS idx_notifications_user_tenant ON public.notifications(user_id, tenant_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_queue_tenant_status ON public.notifications_queue(tenant_id, status);
 
 -- 4) RLS Politikaları
-DO $$
-BEGIN
-  -- SELECT
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'notifications' AND policyname = 'notifications_select_user_or_admin'
-  ) THEN
-    CREATE POLICY notifications_select_user_or_admin
-      ON public.notifications
-      FOR SELECT
-      USING (
-        (auth.jwt() ->> 'user_role') = 'admin'
-        OR (
-          tenant_id IS NOT NULL
-          AND tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-          AND user_id = auth.uid()
-        )
-      );
-  END IF;
+DROP POLICY IF EXISTS notifications_queue_select_policy ON public.notifications_queue;
+DROP POLICY IF EXISTS notifications_queue_insert_policy ON public.notifications_queue;
+DROP POLICY IF EXISTS notifications_queue_update_policy ON public.notifications_queue;
+DROP POLICY IF EXISTS notifications_queue_delete_policy ON public.notifications_queue;
 
-  -- INSERT
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'notifications' AND policyname = 'notifications_insert_user_and_tenant'
-  ) THEN
-    CREATE POLICY notifications_insert_user_and_tenant
-      ON public.notifications
-      FOR INSERT
-      WITH CHECK (
-        (auth.jwt() ->> 'user_role') = 'admin'
-        OR (
-          tenant_id IS NOT NULL
-          AND tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-          AND user_id = auth.uid()
-        )
-      );
-  END IF;
-
-  -- UPDATE (örn. read=true yapmak için)
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'notifications' AND policyname = 'notifications_update_user_and_tenant'
-  ) THEN
-    CREATE POLICY notifications_update_user_and_tenant
-      ON public.notifications
-      FOR UPDATE
-      USING (
-        (auth.jwt() ->> 'user_role') = 'admin'
-        OR (
-          tenant_id IS NOT NULL
-          AND tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-          AND user_id = auth.uid()
-        )
+CREATE POLICY notifications_queue_select_policy
+  ON public.notifications_queue
+  FOR SELECT
+  TO authenticated
+  USING (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    OR (
+      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
+      AND (
+        user_id IS NULL
+        OR user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
       )
-      WITH CHECK (
-        (auth.jwt() ->> 'user_role') = 'admin'
-        OR (
-          tenant_id IS NOT NULL
-          AND tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-          AND user_id = auth.uid()
-        )
-      );
-  END IF;
+    )
+  );
 
-  -- DELETE
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'notifications' AND policyname = 'notifications_delete_user_and_tenant'
-  ) THEN
-    CREATE POLICY notifications_delete_user_and_tenant
-      ON public.notifications
-      FOR DELETE
-      USING (
-        (auth.jwt() ->> 'user_role') = 'admin'
-        OR (
-          tenant_id IS NOT NULL
-          AND tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-          AND user_id = auth.uid()
-        )
-      );
-  END IF;
-END;
-$$;
+CREATE POLICY notifications_queue_insert_policy
+  ON public.notifications_queue
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    OR (
+      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
+      AND (
+        user_id IS NULL
+        OR user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
+      )
+    )
+  );
+
+CREATE POLICY notifications_queue_update_policy
+  ON public.notifications_queue
+  FOR UPDATE
+  TO authenticated
+  USING (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+  )
+  WITH CHECK (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+  );
+
+CREATE POLICY notifications_queue_delete_policy
+  ON public.notifications_queue
+  FOR DELETE
+  TO authenticated
+  USING (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+  );
