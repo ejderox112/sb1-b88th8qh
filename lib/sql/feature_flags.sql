@@ -2,11 +2,11 @@
 CREATE TABLE IF NOT EXISTS public.feature_flags (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
-  user_id uuid,
-  flag_key text NOT NULL, -- e.g. 'new_dashboard', 'ai_assistant'
+  flag_key text NOT NULL, -- e.g. 'new_dashboard', 'ai_assistant', 'beta_export'
   is_enabled boolean DEFAULT false,
-  source text DEFAULT 'manual', -- e.g. 'manual', 'experiment', 'cohort'
-  metadata jsonb, -- e.g. { "rollout": "25%", "region": "EU" }
+  rollout_percentage int CHECK (rollout_percentage BETWEEN 0 AND 100),
+  targeting_rules jsonb, -- e.g. { "region": ["EU", "TR"], "user_role": ["admin"] }
+  created_by uuid,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.feature_flags (
 ALTER TABLE public.feature_flags ENABLE ROW LEVEL SECURITY;
 
 -- 3) İndeks
-CREATE INDEX IF NOT EXISTS idx_feature_flags_tenant_flag ON public.feature_flags(tenant_id, flag_key);
+CREATE INDEX IF NOT EXISTS idx_feature_flags_tenant_key ON public.feature_flags(tenant_id, flag_key);
 
 -- 4) RLS Politikaları
 DROP POLICY IF EXISTS feature_flags_select_policy ON public.feature_flags;
@@ -28,14 +28,8 @@ CREATE POLICY feature_flags_select_policy
   FOR SELECT
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND (
-        user_id IS NULL
-        OR user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-      )
-    )
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
 CREATE POLICY feature_flags_insert_policy
@@ -43,14 +37,8 @@ CREATE POLICY feature_flags_insert_policy
   FOR INSERT
   TO authenticated
   WITH CHECK (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND (
-        user_id IS NULL
-        OR user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-      )
-    )
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
 CREATE POLICY feature_flags_update_policy
@@ -58,24 +46,12 @@ CREATE POLICY feature_flags_update_policy
   FOR UPDATE
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND (
-        user_id IS NULL
-        OR user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-      )
-    )
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   )
   WITH CHECK (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND (
-        user_id IS NULL
-        OR user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-      )
-    )
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
 CREATE POLICY feature_flags_delete_policy
@@ -83,5 +59,6 @@ CREATE POLICY feature_flags_delete_policy
   FOR DELETE
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
