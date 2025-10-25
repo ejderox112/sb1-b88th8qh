@@ -2,12 +2,14 @@
 CREATE TABLE IF NOT EXISTS public.webhooks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
-  name text NOT NULL,
-  event text NOT NULL, -- e.g. 'user.created', 'payment.success'
+  created_by uuid,
+  event_type text NOT NULL, -- e.g. 'user.created', 'invoice.paid', 'backup.failed'
   target_url text NOT NULL,
-  secret text, -- optional signing secret
+  secret text,
   is_active boolean DEFAULT true,
-  created_by uuid NOT NULL,
+  headers jsonb, -- e.g. { "Authorization": "Bearer xyz" }
+  retry_policy jsonb, -- e.g. { "max_attempts": 3, "backoff": "exponential" }
+  last_triggered_at timestamptz,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -16,7 +18,7 @@ CREATE TABLE IF NOT EXISTS public.webhooks (
 ALTER TABLE public.webhooks ENABLE ROW LEVEL SECURITY;
 
 -- 3) İndeks
-CREATE INDEX IF NOT EXISTS idx_webhooks_tenant_event ON public.webhooks(tenant_id, event);
+CREATE INDEX IF NOT EXISTS idx_webhooks_tenant_event ON public.webhooks(tenant_id, event_type);
 
 -- 4) RLS Politikaları
 DROP POLICY IF EXISTS webhooks_select_policy ON public.webhooks;
@@ -29,8 +31,8 @@ CREATE POLICY webhooks_select_policy
   FOR SELECT
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid)
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
 CREATE POLICY webhooks_insert_policy
@@ -38,11 +40,8 @@ CREATE POLICY webhooks_insert_policy
   FOR INSERT
   TO authenticated
   WITH CHECK (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-    )
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
 CREATE POLICY webhooks_update_policy
@@ -50,18 +49,12 @@ CREATE POLICY webhooks_update_policy
   FOR UPDATE
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-    )
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   )
   WITH CHECK (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-    )
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
 CREATE POLICY webhooks_delete_policy
@@ -69,9 +62,6 @@ CREATE POLICY webhooks_delete_policy
   FOR DELETE
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-    )
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'developer')
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
