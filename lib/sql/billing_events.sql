@@ -2,14 +2,13 @@
 CREATE TABLE IF NOT EXISTS public.billing_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
-  triggered_by uuid,
-  event_type text NOT NULL CHECK (event_type IN ('subscription.created', 'subscription.renewed', 'subscription.cancelled', 'payment.success', 'payment.failed')),
-  provider text CHECK (provider IN ('stripe', 'paddle', 'iyzico', 'manual')),
-  external_reference text, -- örn: Stripe event ID
-  amount numeric(10,2),
+  user_id uuid,
+  event_type text NOT NULL CHECK (event_type IN ('subscription.created', 'subscription.cancelled', 'payment.success', 'payment.failed', 'refund.issued')),
+  reference_id text, -- e.g. Stripe ID, invoice ID
+  amount bigint NOT NULL,
   currency text DEFAULT 'USD',
-  status text CHECK (status IN ('pending', 'completed', 'failed')) DEFAULT 'pending',
-  occurred_at timestamptz NOT NULL DEFAULT now(),
+  metadata jsonb, -- e.g. { "method": "card", "provider": "stripe" }
+  occurred_at timestamptz DEFAULT now(),
   created_at timestamptz DEFAULT now()
 );
 
@@ -17,35 +16,38 @@ CREATE TABLE IF NOT EXISTS public.billing_events (
 ALTER TABLE public.billing_events ENABLE ROW LEVEL SECURITY;
 
 -- 3) İndeks
-CREATE INDEX IF NOT EXISTS idx_billing_events_tenant_event ON public.billing_events(tenant_id, event_type, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_billing_events_tenant_event ON public.billing_events(tenant_id, event_type);
 
 -- 4) RLS Politikaları
-DO $$
-BEGIN
-  -- SELECT (sadece admin görebilir)
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'billing_events' AND policyname = 'billing_events_select_admin_only'
-  ) THEN
-    CREATE POLICY billing_events_select_admin_only
-      ON public.billing_events
-      FOR SELECT
-      USING (
-        (auth.jwt() ->> 'user_role') = 'admin'
-      );
-  END IF;
+DROP POLICY IF EXISTS billing_events_select_policy ON public.billing_events;
+DROP POLICY IF EXISTS billing_events_insert_policy ON public.billing_events;
 
-  -- INSERT (sadece sistem veya admin tetikleyebilir)
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'billing_events' AND policyname = 'billing_events_insert_admin_only'
-  ) THEN
-    CREATE POLICY billing_events_insert_admin_only
-      ON public.billing_events
-      FOR INSERT
-      WITH CHECK (
-        (auth.jwt() ->> 'user_role') = 'admin'
-      );
-  END IF;
-END;
-$$;
+CREATE POLICY billing_events_select_policy
+  ON public.billing_events
+  FOR SELECT
+  TO authenticated
+  USING (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    OR (
+      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
+      AND (
+        user_id IS NULL
+        OR user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
+      )
+    )
+  );
+
+CREATE POLICY billing_events_insert_policy
+  ON public.billing_events
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    OR (
+      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
+      AND (
+        user_id IS NULL
+        OR user_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
+      )
+    )
+  );
