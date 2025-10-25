@@ -3,10 +3,10 @@ CREATE TABLE IF NOT EXISTS public.admin_notes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   author_id uuid NOT NULL,
-  entity_type text NOT NULL, -- e.g. 'user', 'project', 'invoice'
-  entity_id uuid NOT NULL,
+  target_type text NOT NULL CHECK (target_type IN ('user', 'ticket', 'session', 'recording', 'other')),
+  target_id uuid NOT NULL,
   note text NOT NULL,
-  visibility text DEFAULT 'private' CHECK (visibility IN ('private', 'team')),
+  visibility text DEFAULT 'private' CHECK (visibility IN ('private', 'team', 'public')),
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.admin_notes (
 ALTER TABLE public.admin_notes ENABLE ROW LEVEL SECURITY;
 
 -- 3) İndeks
-CREATE INDEX IF NOT EXISTS idx_admin_notes_tenant_entity ON public.admin_notes(tenant_id, entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_admin_notes_tenant_target ON public.admin_notes(tenant_id, target_type, target_id);
 
 -- 4) RLS Politikaları
 DROP POLICY IF EXISTS admin_notes_select_policy ON public.admin_notes;
@@ -28,7 +28,7 @@ CREATE POLICY admin_notes_select_policy
   FOR SELECT
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'support')
     AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
@@ -37,7 +37,7 @@ CREATE POLICY admin_notes_insert_policy
   FOR INSERT
   TO authenticated
   WITH CHECK (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'support')
     AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
@@ -46,14 +46,12 @@ CREATE POLICY admin_notes_update_policy
   FOR UPDATE
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'support')
     AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-    AND author_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
   )
   WITH CHECK (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'support')
     AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-    AND author_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
   );
 
 CREATE POLICY admin_notes_delete_policy
@@ -61,7 +59,6 @@ CREATE POLICY admin_notes_delete_policy
   FOR DELETE
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    (current_setting('jwt.claims', true) ->> 'user_role') IN ('admin', 'support')
     AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-    AND author_id = (current_setting('jwt.claims', true) ->> 'sub')::uuid
   );
