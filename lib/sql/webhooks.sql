@@ -2,14 +2,16 @@
 CREATE TABLE IF NOT EXISTS public.webhooks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
-  created_by uuid,
-  event_type text NOT NULL, -- e.g. 'user.created', 'invoice.paid', 'backup.failed'
+  name text NOT NULL,
   target_url text NOT NULL,
+  event_type text NOT NULL CHECK (event_type IN (
+    'user.created', 'user.updated', 'session.started', 'session.ended',
+    'ticket.created', 'ticket.closed', 'recording.ready', 'flag.changed'
+  )),
   secret text,
   is_active boolean DEFAULT true,
-  headers jsonb, -- e.g. { "Authorization": "Bearer xyz" }
-  retry_policy jsonb, -- e.g. { "max_attempts": 3, "backoff": "exponential" }
   last_triggered_at timestamptz,
+  created_by uuid,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
