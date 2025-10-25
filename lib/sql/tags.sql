@@ -1,71 +1,74 @@
 -- 1) Tablo Oluşturma
 CREATE TABLE IF NOT EXISTS public.tags (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  label text NOT NULL,
-  color text, -- örn: '#FF0000'
   tenant_id uuid NOT NULL,
-  owner_user_id uuid NOT NULL,
-  created_at timestamp DEFAULT now()
+  name text NOT NULL,
+  color text DEFAULT '#cccccc',
+  created_by uuid NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
 );
 
 -- 2) RLS Etkinleştirme
 ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
 
 -- 3) İndeks
-CREATE INDEX IF NOT EXISTS idx_tags_tenant_owner ON public.tags(tenant_id, owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_tags_tenant_name ON public.tags(tenant_id, name);
 
 -- 4) RLS Politikaları
-DO $$
-BEGIN
-  -- SELECT
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'tags' AND policyname = 'tags_select_owner_or_admin'
-  ) THEN
-    CREATE POLICY tags_select_owner_or_admin
-      ON public.tags
-      FOR SELECT
-      USING (
-        (auth.jwt() ->> 'user_role') = 'admin'
-        OR (
-          tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-          AND owner_user_id = auth.uid()
-        )
-      );
-  END IF;
+DROP POLICY IF EXISTS tags_select_policy ON public.tags;
+DROP POLICY IF EXISTS tags_insert_policy ON public.tags;
+DROP POLICY IF EXISTS tags_update_policy ON public.tags;
+DROP POLICY IF EXISTS tags_delete_policy ON public.tags;
 
-  -- INSERT
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'tags' AND policyname = 'tags_insert_owner_and_tenant'
-  ) THEN
-    CREATE POLICY tags_insert_owner_and_tenant
-      ON public.tags
-      FOR INSERT
-      WITH CHECK (
-        (auth.jwt() ->> 'user_role') = 'admin'
-        OR (
-          tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-          AND owner_user_id = auth.uid()
-        )
-      );
-  END IF;
+CREATE POLICY tags_select_policy
+  ON public.tags
+  FOR SELECT
+  TO authenticated
+  USING (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    OR (tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid)
+  );
 
-  -- DELETE
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE schemaname = 'public' AND tablename = 'tags' AND policyname = 'tags_delete_owner_and_tenant'
-  ) THEN
-    CREATE POLICY tags_delete_owner_and_tenant
-      ON public.tags
-      FOR DELETE
-      USING (
-        (auth.jwt() ->> 'user_role') = 'admin'
-        OR (
-          tenant_id = (auth.jwt() ->> 'tenant_id')::uuid
-          AND owner_user_id = auth.uid()
-        )
-      );
-  END IF;
-END;
-$$;
+CREATE POLICY tags_insert_policy
+  ON public.tags
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    OR (
+      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
+      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
+    )
+  );
+
+CREATE POLICY tags_update_policy
+  ON public.tags
+  FOR UPDATE
+  TO authenticated
+  USING (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    OR (
+      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
+      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
+    )
+  )
+  WITH CHECK (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    OR (
+      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
+      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
+    )
+  );
+
+CREATE POLICY tags_delete_policy
+  ON public.tags
+  FOR DELETE
+  TO authenticated
+  USING (
+    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
+    OR (
+      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
+      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
+    )
+  );
