@@ -4,12 +4,12 @@ CREATE TABLE IF NOT EXISTS public.announcement_banners (
   tenant_id uuid NOT NULL,
   title text NOT NULL,
   message text NOT NULL,
-  link text, -- optional CTA
-  variant text DEFAULT 'info', -- e.g. 'info', 'warning', 'success', 'error'
+  banner_type text CHECK (banner_type IN ('info', 'warning', 'success', 'error')),
+  audience text CHECK (audience IN ('all', 'admins', 'users')),
   is_active boolean DEFAULT true,
-  starts_at timestamptz DEFAULT now(),
-  ends_at timestamptz,
-  created_by uuid NOT NULL,
+  display_from timestamptz,
+  display_until timestamptz,
+  created_by uuid,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -31,8 +31,7 @@ CREATE POLICY announcement_banners_select_policy
   FOR SELECT
   TO authenticated
   USING (
-    (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid)
+    tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
 CREATE POLICY announcement_banners_insert_policy
@@ -41,10 +40,7 @@ CREATE POLICY announcement_banners_insert_policy
   TO authenticated
   WITH CHECK (
     (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-    )
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
 CREATE POLICY announcement_banners_update_policy
@@ -53,17 +49,11 @@ CREATE POLICY announcement_banners_update_policy
   TO authenticated
   USING (
     (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-    )
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   )
   WITH CHECK (
     (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-    )
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
 
 CREATE POLICY announcement_banners_delete_policy
@@ -72,8 +62,5 @@ CREATE POLICY announcement_banners_delete_policy
   TO authenticated
   USING (
     (current_setting('jwt.claims', true) ->> 'user_role') = 'admin'
-    OR (
-      tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
-      AND created_by = (current_setting('jwt.claims', true) ->> 'sub')::uuid
-    )
+    AND tenant_id = (current_setting('jwt.claims', true) ->> 'tenant_id')::uuid
   );
