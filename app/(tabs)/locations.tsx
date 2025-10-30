@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { POI } from '../../types';
-import { supabase } from '../../lib/supabase';
 import { Search, MapPin, Building, Navigation } from 'lucide-react-native';
 
 export default function LocationsScreen() {
@@ -18,6 +17,26 @@ export default function LocationsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFloor, setSelectedFloor] = useState<number | null>(null);
   const [selectedType, setSelectedType] = useState<POI['type'] | null>(null);
+
+  const filterPOIs = useCallback(() => {
+    let filtered = pois;
+
+    if (searchQuery) {
+      filtered = filtered.filter(poi =>
+        poi.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    if (selectedFloor !== null) {
+      filtered = filtered.filter(poi => poi.floor === selectedFloor);
+    }
+
+    if (selectedType) {
+      filtered = filtered.filter(poi => poi.type === selectedType);
+    }
+
+    setFilteredPois(filtered);
+  }, [pois, searchQuery, selectedFloor, selectedType]);
 
   useEffect(() => {
     // Demo POI verileri yükle
@@ -64,27 +83,7 @@ export default function LocationsScreen() {
 
   useEffect(() => {
     filterPOIs();
-  }, [pois, searchQuery, selectedFloor, selectedType]);
-
-  const filterPOIs = () => {
-    let filtered = pois;
-
-    if (searchQuery) {
-      filtered = filtered.filter(poi =>
-        poi.name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    if (selectedFloor !== null) {
-      filtered = filtered.filter(poi => poi.floor === selectedFloor);
-    }
-
-    if (selectedType) {
-      filtered = filtered.filter(poi => poi.type === selectedType);
-    }
-
-    setFilteredPois(filtered);
-  };
+  }, [filterPOIs]);
 
   const getTypeIcon = (type: POI['type']) => {
     switch (type) {

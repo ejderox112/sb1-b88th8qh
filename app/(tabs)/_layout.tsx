@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { MapPin, List, User, Settings } from 'lucide-react-native';
+import { MapPin, List, User } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
