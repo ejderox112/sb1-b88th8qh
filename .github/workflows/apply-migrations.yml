@@ -1,0 +1,75 @@
+name: Apply DB Migrations
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  apply-migrations:
+    name: Apply SQL migrations to Supabase
+    runs-on: ubuntu-latest
+    env:
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD || '' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install psql (postgres client)
+        # Uses libpq via postgresql-client on Ubuntu
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Build migration file list
+        id: list
+        run: |
+          # Find .sql files under db/migrations and sort them
+          files=$(find db/migrations -type f -name "*.sql" | sort)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$files" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Apply migrations
+        env:
+          # Prefer using a single URL secret; fallback to assembled parts if provided
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_HOST: ${{ secrets.SUPABASE_DB_HOST }}
+          SUPABASE_DB_USER: ${{ secrets.SUPABASE_DB_USER }}
+          SUPABASE_DB_NAME: ${{ secrets.SUPABASE_DB_NAME }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_PORT: ${{ secrets.SUPABASE_DB_PORT || '5432' }}
+        run: |
+          set -euo pipefail
+          # Construct connection string if not provided directly
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            if [ -z "${SUPABASE_DB_USER:-}" ] || [ -z "${SUPABASE_DB_PASSWORD:-}" ] || [ -z "${SUPABASE_DB_HOST:-}" ] || [ -z "${SUPABASE_DB_NAME:-}" ]; then
+              echo "ERROR: Provide SUPABASE_DB_URL or SUPABASE_DB_{HOST,USER,PASSWORD,NAME} secrets"
+              exit 1
+            fi
+            SUPABASE_DB_URL="postgres://${SUPABASE_DB_USER}:${SUPABASE_DB_PASSWORD}@${SUPABASE_DB_HOST}:${SUPABASE_DB_PORT}/${SUPABASE_DB_NAME}"
+          fi
+
+          echo "Using connection: ${SUPABASE_DB_URL%%@*}@***"  # don't print password
+          # Export PGPASSWORD so psql can use it securely if URL not used for password
+          if [ -n "${SUPABASE_DB_PASSWORD:-}" ]; then
+            export PGPASSWORD="${SUPABASE_DB_PASSWORD}"
+          fi
+
+          # Iterate files and apply sequentially
+          IFS=$'\n'
+          for f in ${{ steps.list.outputs.files }}; do
+            if [ -z "$f" ]; then
+              continue
+            fi
+            echo "Applying migration: $f"
+            # Run psql using the full connection URL if provided
+            if [[ "${SUPABASE_DB_URL}" == postgres:* ]]; then
+              psql "${SUPABASE_DB_URL}" -v ON_ERROR_STOP=1 -f "$f"
+            else
+              # If no url, use individual env vars
+              psql -h "${SUPABASE_DB_HOST}" -U "${SUPABASE_DB_USER}" -d "${SUPABASE_DB_NAME}" -p "${SUPABASE_DB_PORT}" -v ON_ERROR_STOP=1 -f "$f"
+            fi
+            echo "Applied: $f"
+          done
