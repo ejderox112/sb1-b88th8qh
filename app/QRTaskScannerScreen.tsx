@@ -14,7 +14,7 @@ export default function QRTaskScannerScreen() {
   };
 
   const handleScan = async ({ data }) => {
-    setScanned(true;
+    setScanned(true);
     const { data: task } = await supabase
       .from('tasks')
       .select('*')

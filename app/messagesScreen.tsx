@@ -52,7 +52,7 @@ export default function MessagesScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Mesajlaşma</Text>
-      <Text aligh="left">Alıcı ID:</Text>
+      <Text align="left">Alıcı ID:</Text>
       <TextInput
         placeholder="Kullanıcı ID"
         value={recipientId}

@@ -1,7 +1,8 @@
 // app/(auth)/AuthScreen.tsx
-import { View, Text, Button, TextInput } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Button, TextInput } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
-import { supabase } from '../../lib/supabase'; // Supabase client
+import { supabase } from '../lib/supabase'; // Supabase client
 
 export default function AuthScreen() {
   const [request, response, promptAsync] = Google.useAuthRequest({

@@ -92,6 +92,7 @@ export default function ChallengeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20 },
+  container: { padding: 20, flex: 1 },
   title: { fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
-  section: { marginTop: 20, fontSize: 18, font
+  section: { marginTop: 20, fontSize: 18, fontWeight: 'bold' },
+});
