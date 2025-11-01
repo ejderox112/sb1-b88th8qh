@@ -1,11 +1,10 @@
 
-import React, { useRef, useEffect, useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, Button, ScrollView } from 'react-native';
 import Slider from '@react-native-community/slider';
 import type { CorridorSettings, Destination, Journey } from '../types';
-
-// NOTE: This is a re-creation for React Native based on the props from App.tsx
-// as the original ControlPanel.tsx was missing.
+import MiniMap from './MiniMap.native';
+import ImageEditor from './ImageEditor.native'; // Import the new ImageEditor
 
 interface ControlPanelProps {
   settings: CorridorSettings;
@@ -15,9 +14,9 @@ interface ControlPanelProps {
   path: string[];
   history: Journey[];
   onNewDestination: () => void;
-  mapApiLoaded: boolean; // Will be used for native maps
-  userLocation: { lat: number; lng: number } | null; // Will be used for native maps
-  onPlaceSelected: (destination: Destination) => void; // Will be used for native maps
+  mapApiLoaded: boolean;
+  userLocation: { lat: number; lng: number } | null;
+  onPlaceSelected: (destination: Destination) => void;
 }
 
 const ControlPanel: React.FC<ControlPanelProps> = ({
@@ -34,22 +33,17 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     <ScrollView style={styles.container}>
       <Text style={styles.header}>Control Panel</Text>
       
-      {/* Journey Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Current Journey</Text>
-        <Text style={styles.text}>Current Location: <Text style={{color: settings.lineColor}}>{settings.id}</Text></Text>
-        {destination ? (
-            <>
-                <Text style={styles.text}>Destination: {destination.name}</Text>
-                <Text style={styles.text}>Path: {path.join(' -> ')}</Text>
-            </>
-        ) : (
-            <Text style={styles.text}>No destination set.</Text>
+        {destination && (
+            <View style={styles.miniMapContainer}>
+                <MiniMap path={path} currentId={settings.id} lineColor={settings.lineColor} />
+            </View>
         )}
-        <Button title="Find New Destination" onPress={onNewDestination} color={settings.lineColor} />
+        <Text style={styles.text}>Location: <Text style={{color: settings.lineColor}}>{settings.id}</Text></Text>
+        <Button title={destination ? "Complete & Find New" : "Find New Destination"} onPress={onNewDestination} color={settings.lineColor} />
       </View>
 
-      {/* Camera Controls */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Camera Controls</Text>
         <Text style={styles.text}>Depth: {Math.round(cameraZ)} / {settings.numSegments}</Text>
@@ -64,9 +58,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           thumbTintColor={settings.lineColor}
         />
       </View>
+
+      <View style={styles.section}>
+        <ImageEditor lineColor={settings.lineColor} />
+      </View>
       
-       {/* Journey History */}
-      {history.length > 0 && <View style={styles.section}>
+       {history.length > 0 && <View style={styles.section}>
         <Text style={styles.sectionTitle}>Journey History</Text>
         {history.map((journey, index) => (
             <Text key={index} style={styles.historyItem}>
@@ -75,22 +72,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         ))}
       </View>}
 
-      {/* Placeholder for Map/Image Editor functionality */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>More Tools</Text>
-        <Text style={styles.placeholderText}>Map and Image Editor will be here.</Text>
-      </View>
-
     </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     padding: 12,
     backgroundColor: '#1a1a1a',
-    borderLeftWidth: 1,
-    borderColor: '#444',
   },
   header: {
     fontSize: 22,
@@ -121,10 +111,9 @@ const styles = StyleSheet.create({
       color: '#aaa',
       fontSize: 14,
   },
-  placeholderText: {
-      color: '#888',
-      textAlign: 'center',
-      fontStyle: 'italic',
+  miniMapContainer: {
+      marginBottom: 15,
+      alignItems: 'center',
   }
 });
 

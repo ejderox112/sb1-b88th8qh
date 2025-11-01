@@ -1,5 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { useRef } from 'react';
+
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+
+// NOTE: This entire file is temporarily commented out to allow the web preview to build.
+// It imports native-only modules (react-native-maps, expo-location) that are not compatible with web.
+
+export default function MapViewComponent() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.text}>Map functionality is temporarily disabled for web preview.</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  text: { fontSize: 18, color: '#999', textAlign: 'center', padding: 20 },
+});
+
+/*
+import { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Alert, Platform } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -133,3 +153,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+*/
