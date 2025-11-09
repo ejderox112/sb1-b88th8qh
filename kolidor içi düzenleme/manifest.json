@@ -1,8 +1,0 @@
-
-{
-  "name": "Corridor Pathfinder",
-  "description": "Navigate through procedurally generated corridors to find real-world destinations using Google Maps.",
-  "requestFramePermissions": [
-    "geolocation"
-  ]
-}

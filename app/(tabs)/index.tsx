@@ -1,11 +1,11 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, StyleSheet, useWindowDimensions, Alert, Platform } from 'react-native'; // Import Platform
-import type { CorridorSettings, Door, Destination, Journey } from '../../kolidor içi düzenleme/types';
-import { stringToSeed, mulberry32 } from '../../kolidor içi düzenleme/utils/random';
-import ControlPanel from '../../kolidor içi düzenleme/components/ControlPanel.native';
-import ChatBot from '../../kolidor içi düzenleme/components/ChatBot.native';
-import Corridor3D from '../../kolidor içi düzenleme/components/Corridor3D';
+import type { CorridorSettings, Door, Destination, Journey } from '../../corridor-editor/types';
+import { stringToSeed, mulberry32 } from '../../corridor-editor/utils/random';
+import ControlPanel from '../../corridor-editor/components/ControlPanel.native';
+import ChatBot from '../../corridor-editor/components/ChatBot.native';
+import Corridor3D from '../../corridor-editor/components/Corridor3D';
 
 // Helper functions remain the same...
 const generateThematicId = (random: () => number, part: number): string => {
@@ -78,21 +78,19 @@ export default function MapTabScreen() {
       setHistory(prev => [completedJourney, ...prev.slice(0, 4)]);
     }
 
+    // NOTE: Alert.prompt is iOS-only. 
+    // For Android, a custom modal or a third-party library would be needed.
+    // As a temporary fix, we'll use a simple alert.
     if (Platform.OS === 'web') {
         const text = window.prompt('Enter the name of the place you want to go:');
         if (text) {
             handlePlaceSelected({ name: text, address: '' });
         }
     } else {
-        Alert.prompt(
-            'Find a New Destination',
-            'Enter the name of the place you want to go:',
-            (text) => {
-                if (text) {
-                    handlePlaceSelected({ name: text, address: '' });
-                }
-            },
-            'plain-text'
+        Alert.alert(
+            'Feature Not Available on Android',
+            'Entering a destination via a prompt is not supported on Android in this version.',
+            [{ text: 'OK' }]
         );
     }
   }, [destination, path, handlePlaceSelected]);

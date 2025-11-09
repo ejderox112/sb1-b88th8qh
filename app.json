@@ -24,6 +24,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "package": "com.anonymous.boltexponativewind"
     }
   }
 }
