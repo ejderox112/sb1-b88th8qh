@@ -17,6 +17,7 @@ export const supabase = supabaseUrl && supabaseAnonKey
         signUp: async () => ({ data: null, error: new Error('Supabase not configured') }),
         signOut: async () => ({ error: new Error('Supabase not configured') }),
         getUser: async () => ({ data: { user: null }, error: new Error('Supabase not configured') }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }), // Mock onAuthStateChange
       },
       from: () => ({
         select: () => ({

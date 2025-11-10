@@ -1,13 +1,13 @@
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { View, StyleSheet, useWindowDimensions, Alert, Platform, Text } from 'react-native';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { View, StyleSheet, useWindowDimensions, Alert, Platform, Text, Button } from 'react-native';
 import * as Location from 'expo-location';
 import type { CorridorSettings, Door, Destination, Journey } from '../../corridor-editor/types';
 import { stringToSeed, mulberry32 } from '../../corridor-editor/utils/random';
 import ControlPanel from '../../corridor-editor/components/ControlPanel.native';
 import ChatBot from '../../corridor-editor/components/ChatBot.native';
 import Corridor3D from '../../corridor-editor/components/Corridor3D';
-import MiniMap from '../../corridor-editor/components/MiniMap'; // Import the new MiniMap
+import MiniMap from '../../corridor-editor/components/MiniMap';
 
 // --- Start of Navigation Logic ---
 const TARGET_LOCATION = { name: "Izmir Şehir Hastanesi Girişi", latitude: 38.4613, longitude: 27.2069 };
@@ -42,9 +42,47 @@ function getNavigationInstruction(heading: number, bearing: number): string {
 // --- End of Navigation Logic ---
 
 
-const generateThematicId = (random: () => number, part: number): string => { /* ... */ return ''; };
-const generatePathForDestination = (destinationName: string): string[] => { /* ... */ return []; };
-const generateCorridorSettings = (id: string, destination: Destination | null, path: string[]): CorridorSettings => { /* ... */ return {} as any; };
+// --- Corridor Logic ---
+const generateThematicId = (random: () => number, part: number): string => {
+    const prefixes = ['Wing', 'Block', 'Sector', 'Hall', 'Section', 'Area'];
+    const letters = 'ABCDEFG';
+    if (part === 0) return `Main Lobby`;
+    if (part < 4) return `${prefixes[Math.floor(random() * prefixes.length)]} ${letters.charAt(Math.floor(random() * letters.length))}`;
+    return `Room ${Math.floor(random() * 900) + 100}`;
+};
+
+const generatePathForDestination = (destinationName: string): string[] => {
+    const seed = stringToSeed(destinationName);
+    const random = mulberry32(seed);
+    const pathLength = Math.floor(random() * 3) + 3;
+    const path = ['START-0'];
+    for (let i = 0; i < pathLength; i++) {
+        path.push(generateThematicId(random, i + 1));
+    }
+    path.push(destinationName);
+    return path;
+};
+
+const generateCorridorSettings = (id: string, destination: Destination | null, path: string[]): CorridorSettings => {
+  const seed = stringToSeed(id + (destination?.name || ''));
+  const random = mulberry32(seed);
+  const lineColor = `hsl(${Math.floor(random() * 360)}, 90%, 70%)`;
+  const numDoors = Math.floor(random() * 4) + 2;
+  const doors: Door[] = [];
+  const currentPathIndex = path.indexOf(id);
+  const nextPathId = (currentPathIndex !== -1 && currentPathIndex < path.length - 1) ? path[currentPathIndex + 1] : null;
+
+  if (nextPathId) {
+    doors.push({ id: nextPathId, position: Math.floor(random() * 30) + 5, side: random() > 0.5 ? 'left' : 'right', isPath: true });
+  }
+  const remainingDoors = numDoors - doors.length;
+  for (let i = 0; i < remainingDoors; i++) {
+    const doorId = generateThematicId(random, Math.floor(random() * 5));
+    doors.push({ id: doorId, position: Math.floor(random() * 30) + 5, side: random() > 0.5 ? 'left' : 'right', isPath: false });
+  }
+  
+  return { id, doors, lineColor, numSegments: 40, vanishingPointX: 0.5, vanishingPointY: 0.5, corridorWidth: 0.8, corridorHeight: 0.9, perspectiveStrength: 1.5 };
+};
 
 
 export default function MapTabScreen() {
@@ -52,37 +90,44 @@ export default function MapTabScreen() {
   const [destination, setDestination] = useState<Destination | null>(null);
   const [path, setPath] = useState<string[]>(['START-0']);
   const [history, setHistory] = useState<Journey[]>([]);
-
-  // States for real-world navigation
+  
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [heading, setHeading] = useState<number | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
-  const [instruction, setInstruction] = useState<string>("Konum bilgisi bekleniyor...");
+  const [instruction, setInstruction] = useState<string>("Navigasyon başlatılmadı.");
   const [bearing, setBearing] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
+
+  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const headingSubscription = useRef<Location.LocationSubscription | null>(null);
 
   const { width } = useWindowDimensions();
   const isMobileLayout = width < 768;
   const corridorSettings = useMemo(() => generateCorridorSettings(corridorId, destination, path), [corridorId, destination, path]);
 
-  useEffect(() => {
-    let locationSubscription: Location.LocationSubscription | undefined;
-    let headingSubscription: Location.LocationSubscription | undefined;
-    const startWatching = async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setErrorMsg('Permission to access location was denied');
-        return;
-      }
-      locationSubscription = await Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1 }, (newLocation) => { setLocation(newLocation); });
-      headingSubscription = await Location.watchHeadingAsync((newHeading) => { setHeading(newHeading.trueHeading); });
-    };
-    startWatching();
-    return () => { locationSubscription?.remove(); headingSubscription?.remove(); };
-  }, []);
+  const startNavigation = async () => {
+    setErrorMsg(null);
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      setErrorMsg('Permission to access location was denied');
+      return;
+    }
+    
+    setIsNavigating(true);
+    locationSubscription.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1 }, (newLocation) => setLocation(newLocation));
+    headingSubscription.current = await Location.watchHeadingAsync((newHeading) => setHeading(newHeading.trueHeading));
+  };
+
+  const stopNavigation = () => {
+    setIsNavigating(false);
+    locationSubscription.current?.remove();
+    headingSubscription.current?.remove();
+    setInstruction("Navigasyon durduruldu.");
+  };
 
   useEffect(() => {
-    if (location && heading !== null) {
+    if (isNavigating && location && heading !== null) {
       const dist = getDistanceInMeters(location.coords.latitude, location.coords.longitude, TARGET_LOCATION.latitude, TARGET_LOCATION.longitude);
       setDistance(dist);
       const calculatedBearing = calculateBearing(location.coords.latitude, location.coords.longitude, TARGET_LOCATION.latitude, TARGET_LOCATION.longitude);
@@ -90,15 +135,23 @@ export default function MapTabScreen() {
 
       if (dist < ARRIVAL_THRESHOLD_METERS) {
         setInstruction(`Hedefe Ulaştınız: ${TARGET_LOCATION.name}`);
+        stopNavigation();
       } else {
         setInstruction(getNavigationInstruction(heading, calculatedBearing));
       }
     }
-  }, [location, heading]);
+  }, [location, heading, isNavigating]);
+  
+  useEffect(() => {
+    return () => {
+      locationSubscription.current?.remove();
+      headingSubscription.current?.remove();
+    };
+  }, []);
 
   const handleNavigate = useCallback((newId: string) => { setCorridorId(newId); }, []);
-  const handlePlaceSelected = useCallback((newDestination: Destination | null) => { /* ... */ }, []);
-  const handleNewDestination = useCallback(() => { /* ... */ }, [destination, path, handlePlaceSelected]);
+  const handlePlaceSelected = useCallback(() => {}, []);
+  const handleNewDestination = useCallback(() => {}, []);
 
   return (
     <View style={styles.container}>
@@ -112,8 +165,13 @@ export default function MapTabScreen() {
             <View style={styles.locationContainer}>
               <Text style={styles.navigationHeader}>Navigasyon</Text>
               {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
+              {!isNavigating ? (
+                <Button title="Start Navigation" onPress={startNavigation} />
+              ) : (
+                <Button title="Stop Navigation" onPress={stopNavigation} color="red" />
+              )}
               <Text style={styles.instructionText}>{instruction}</Text>
-              {distance !== null && (
+              {distance !== null && isNavigating && (
                  <Text style={styles.locationText}>
                    Hedefe olan mesafe: {distance.toFixed(0)} metre
                  </Text>
@@ -122,8 +180,8 @@ export default function MapTabScreen() {
         </View>
         <View style={styles.canvasContainer}>
           <Corridor3D 
-            key={heading} // Force re-render on heading change to update camera
-            cameraRotationY={heading ? (-heading * Math.PI / 180) : 0} // Pass heading as rotation
+            key={heading}
+            cameraRotationY={heading ? (-heading * Math.PI / 180) : 0}
             settings={corridorSettings} 
             onNavigate={handleNavigate} 
           />

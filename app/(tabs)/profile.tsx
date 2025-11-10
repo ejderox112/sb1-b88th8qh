@@ -26,10 +26,10 @@ export default function ProfileScreen() {
   }, []);
 
   const loadUserData = async () => {
+    setLoading(true);
     try {
       const currentUser = await authService.getCurrentUser();
       if (currentUser) {
-        // Kullanıcı bilgilerini al
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('*')
@@ -39,7 +39,6 @@ export default function ProfileScreen() {
         if (userError) throw userError;
         setUser(userData);
 
-        // Kullanıcının önerilerini al
         const { data: suggestionsData, error: suggestionsError } = await supabase
           .from('suggestions')
           .select('*')
@@ -48,14 +47,17 @@ export default function ProfileScreen() {
 
         if (suggestionsError) throw suggestionsError;
         setUserSuggestions(suggestionsData || []);
+      } else {
+        setUser(null);
       }
     } catch (error) {
       console.error('Kullanıcı verileri yüklenemedi:', error);
+      setUser(null);
     } finally {
       setLoading(false);
     }
   };
-
+  
   const handleSignOut = async () => {
     Alert.alert(
       'Çıkış Yap',
@@ -68,6 +70,7 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await authService.signOut();
+              setUser(null); 
             } catch (error) {
               Alert.alert('Hata', 'Çıkış yapılamadı');
             }
@@ -76,7 +79,7 @@ export default function ProfileScreen() {
       ]
     );
   };
-
+  
   const getStatusIcon = (status: Suggestion['status']) => {
     switch (status) {
       case 'pending': return <Clock size={16} color="#FFA500" />;
@@ -141,14 +144,14 @@ export default function ProfileScreen() {
 
   if (!user) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text>Kullanıcı bilgileri yüklenemedi</Text>
-        </View>
-      </SafeAreaView>
+        <SafeAreaView style={styles.container}>
+            <View style={styles.loadingContainer}>
+                <Text>Kullanıcı bilgileri yüklenemedi. Lütfen giriş yapın.</Text>
+            </View>
+        </SafeAreaView>
     );
   }
-
+  
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -233,11 +236,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
