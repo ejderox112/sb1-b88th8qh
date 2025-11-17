@@ -169,7 +169,7 @@ const ImageEditor: React.FC<{ lineColor: string }> = ({ lineColor }) => {
                             className="w-full p-3 bg-green-800/50 hover:bg-green-800/80 border border-green-600 rounded-md text-white font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isLoading ? 'Editing...' : 'Apply Edit'}
-                        </button
+                        </button>
                     </div>
                 </div>
             </div>
