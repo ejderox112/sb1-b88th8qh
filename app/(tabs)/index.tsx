@@ -1,210 +1,499 @@
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { View, StyleSheet, useWindowDimensions, Alert, Platform, Text, Button } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert } from 'react-native';
 import * as Location from 'expo-location';
-import type { CorridorSettings, Door, Destination, Journey } from '../../corridor-editor/types';
-import { stringToSeed, mulberry32 } from '../../corridor-editor/utils/random';
-import ControlPanel from '../../corridor-editor/components/ControlPanel.native';
-import ChatBot from '../../corridor-editor/components/ChatBot.native';
-import Corridor3D from '../../corridor-editor/components/Corridor3D';
-import MiniMap from '../../corridor-editor/components/MiniMap';
+import { supabase } from '@/lib/supabase';
+import { getActiveVenue, getDoorSigns } from '@/lib/indoor/store';
+import type { Node as IndoorNode } from '@/lib/indoor/types';
+import Corridor3DWrapper from '@/components/Corridor3DWrapper';
 
-// --- Start of Navigation Logic ---
-const TARGET_LOCATION = { name: "Izmir Şehir Hastanesi Girişi", latitude: 38.4613, longitude: 27.2069 };
-const ARRIVAL_THRESHOLD_METERS = 20;
+// Mock GPS coordinates for demo (İzmir Şehir Hastanesi)
+const DEMO_VENUE_LAT = 38.4613;
+const DEMO_VENUE_LON = 27.2069;
 
-function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371e3; const φ1 = lat1 * Math.PI/180; const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180; const Δλ = (lon2-lon1) * Math.PI/180;
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
+interface NearbyUser {
+  id: string;
+  username: string;
+  avatar?: string;
+  nodeId: string;
+  floorId: string;
+  distance: number;
 }
-
-function calculateBearing(startLat: number, startLng: number, destLat: number, destLng: number) {
-  const startLatRad = startLat * Math.PI/180; const destLatRad = destLat * Math.PI/180;
-  const dLng = (destLng - startLng) * Math.PI/180;
-  const y = Math.sin(dLng) * Math.cos(destLatRad);
-  const x = Math.cos(startLatRad) * Math.sin(destLatRad) - Math.sin(startLatRad) * Math.cos(destLatRad) * Math.cos(dLng);
-  let brng = Math.atan2(y, x);
-  brng = brng * 180/Math.PI;
-  return (brng + 360) % 360;
-}
-
-function getNavigationInstruction(heading: number, bearing: number): string {
-    const diff = bearing - heading;
-    const angle = (diff + 180) % 360 - 180;
-    if (angle > -22.5 && angle <= 22.5) return "Düz Git";
-    if (angle > 22.5 && angle <= 157.5) return "Sağa Dön";
-    if (angle < -22.5 && angle >= -157.5) return "Sola Dön";
-    return "Arkana Dön";
-}
-// --- End of Navigation Logic ---
-
-
-// --- Corridor Logic ---
-const generateThematicId = (random: () => number, part: number): string => {
-    const prefixes = ['Wing', 'Block', 'Sector', 'Hall', 'Section', 'Area'];
-    const letters = 'ABCDEFG';
-    if (part === 0) return `Main Lobby`;
-    if (part < 4) return `${prefixes[Math.floor(random() * prefixes.length)]} ${letters.charAt(Math.floor(random() * letters.length))}`;
-    return `Room ${Math.floor(random() * 900) + 100}`;
-};
-
-const generatePathForDestination = (destinationName: string): string[] => {
-    const seed = stringToSeed(destinationName);
-    const random = mulberry32(seed);
-    const pathLength = Math.floor(random() * 3) + 3;
-    const path = ['START-0'];
-    for (let i = 0; i < pathLength; i++) {
-        path.push(generateThematicId(random, i + 1));
-    }
-    path.push(destinationName);
-    return path;
-};
-
-const generateCorridorSettings = (id: string, destination: Destination | null, path: string[]): CorridorSettings => {
-  const seed = stringToSeed(id + (destination?.name || ''));
-  const random = mulberry32(seed);
-  const lineColor = `hsl(${Math.floor(random() * 360)}, 90%, 70%)`;
-  const numDoors = Math.floor(random() * 4) + 2;
-  const doors: Door[] = [];
-  const currentPathIndex = path.indexOf(id);
-  const nextPathId = (currentPathIndex !== -1 && currentPathIndex < path.length - 1) ? path[currentPathIndex + 1] : null;
-
-  if (nextPathId) {
-    doors.push({ id: nextPathId, position: Math.floor(random() * 30) + 5, side: random() > 0.5 ? 'left' : 'right', isPath: true });
-  }
-  const remainingDoors = numDoors - doors.length;
-  for (let i = 0; i < remainingDoors; i++) {
-    const doorId = generateThematicId(random, Math.floor(random() * 5));
-    doors.push({ id: doorId, position: Math.floor(random() * 30) + 5, side: random() > 0.5 ? 'left' : 'right', isPath: false });
-  }
-  
-  return { id, doors, lineColor, numSegments: 40, vanishingPointX: 0.5, vanishingPointY: 0.5, corridorWidth: 0.8, corridorHeight: 0.9, perspectiveStrength: 1.5 };
-};
-
 
 export default function MapTabScreen() {
-  const [corridorId, setCorridorId] = useState<string>('START-0');
-  const [destination, setDestination] = useState<Destination | null>(null);
-  const [path, setPath] = useState<string[]>(['START-0']);
-  const [history, setHistory] = useState<Journey[]>([]);
-  
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [heading, setHeading] = useState<number | null>(null);
-  const [distance, setDistance] = useState<number | null>(null);
-  const [instruction, setInstruction] = useState<string>("Navigasyon başlatılmadı.");
-  const [bearing, setBearing] = useState<number | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isNavigating, setIsNavigating] = useState(false);
+  const [heading, setHeading] = useState(0);
+  const [currentNode, setCurrentNode] = useState<IndoorNode | null>(null);
+  const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
+  const [isIndoor, setIsIndoor] = useState(false);
+  const venue = getActiveVenue();
 
-  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
-  const headingSubscription = useRef<Location.LocationSubscription | null>(null);
-
-  const { width } = useWindowDimensions();
-  const isMobileLayout = width < 768;
-  const corridorSettings = useMemo(() => generateCorridorSettings(corridorId, destination, path), [corridorId, destination, path]);
-
-  const startNavigation = async () => {
-    setErrorMsg(null);
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      setErrorMsg('Permission to access location was denied');
-      return;
-    }
-    
-    setIsNavigating(true);
-    locationSubscription.current = await Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1 }, (newLocation) => setLocation(newLocation));
-    headingSubscription.current = await Location.watchHeadingAsync((newHeading) => setHeading(newHeading.trueHeading));
-  };
-
-  const stopNavigation = () => {
-    setIsNavigating(false);
-    locationSubscription.current?.remove();
-    headingSubscription.current?.remove();
-    setInstruction("Navigasyon durduruldu.");
-  };
-
+  // GPS Tracking
   useEffect(() => {
-    if (isNavigating && location && heading !== null) {
-      const dist = getDistanceInMeters(location.coords.latitude, location.coords.longitude, TARGET_LOCATION.latitude, TARGET_LOCATION.longitude);
-      setDistance(dist);
-      const calculatedBearing = calculateBearing(location.coords.latitude, location.coords.longitude, TARGET_LOCATION.latitude, TARGET_LOCATION.longitude);
-      setBearing(calculatedBearing);
+    let locationSub: Location.LocationSubscription | null = null;
+    let headingSub: Location.LocationSubscription | null = null;
 
-      if (dist < ARRIVAL_THRESHOLD_METERS) {
-        setInstruction(`Hedefe Ulaştınız: ${TARGET_LOCATION.name}`);
-        stopNavigation();
-      } else {
-        setInstruction(getNavigationInstruction(heading, calculatedBearing));
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Konum İzni', 'Navigasyon için konum iznine ihtiyacımız var.');
+        return;
       }
-    }
-  }, [location, heading, isNavigating]);
-  
-  useEffect(() => {
+
+      // Location updates
+      locationSub = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 1000,
+          distanceInterval: 1,
+        },
+        (loc) => {
+          setLocation(loc);
+          checkIndoorPosition(loc);
+        }
+      );
+
+      // Heading updates
+      if (Platform.OS !== 'web') {
+        headingSub = await Location.watchHeadingAsync((h) => {
+          setHeading(h.trueHeading ?? h.magHeading);
+        });
+      }
+    })();
+
     return () => {
-      locationSubscription.current?.remove();
-      headingSubscription.current?.remove();
+      locationSub?.remove();
+      headingSub?.remove();
     };
   }, []);
 
-  const handleNavigate = useCallback((newId: string) => { setCorridorId(newId); }, []);
-  const handlePlaceSelected = useCallback(() => {}, []);
-  const handleNewDestination = useCallback(() => {}, []);
+  // Check if user is inside venue and map to nearest node
+  const checkIndoorPosition = (loc: Location.LocationObject) => {
+    if (!loc?.coords) return;
+    
+    const { latitude, longitude } = loc.coords;
+    // Simple proximity check (within ~100m)
+    const dist = getDistance(latitude, longitude, DEMO_VENUE_LAT, DEMO_VENUE_LON);
+    
+    if (dist < 0.1) {
+      setIsIndoor(true);
+      // Map to nearest indoor node (simplified - in production use floor detection)
+      const entrance = venue?.nodes?.find(n => n.id === 'entrance');
+      if (entrance) setCurrentNode(entrance);
+    } else {
+      setIsIndoor(false);
+      setCurrentNode(null);
+    }
+  };
+
+  // Haversine distance in km
+  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+
+  // Realtime nearby users (mock for now)
+  useEffect(() => {
+    if (!isIndoor || !currentNode) return;
+
+    // Mock nearby users
+    const mockUsers: NearbyUser[] = [
+      { id: '1', username: 'Ahmet K.', nodeId: 'entrance', floorId: '0', distance: 5 },
+      { id: '2', username: 'Zeynep A.', nodeId: 'elevator1', floorId: '0', distance: 12 },
+    ];
+    setNearbyUsers(mockUsers);
+
+    // TODO: Supabase realtime subscription
+    // const channel = supabase.channel('indoor-users')
+    //   .on('presence', { event: 'sync' }, () => { ... })
+    //   .subscribe();
+    // return () => { channel.unsubscribe(); };
+  }, [isIndoor, currentNode]);
+
+  const handleMessageUser = (userId: string) => {
+    Alert.alert('Mesaj Gönder', `${userId} kullanıcısına mesaj göndermek için mesaj ekranına yönlendiriliyorsunuz.`);
+    // TODO: Navigate to ChatScreen with userId
+  };
+
+  // Live Map with corridor visualization
+  const LiveMapView = () => {
+    if (!isIndoor || !currentNode || !venue?.nodes) {
+      // Outdoor Google Maps style view
+      return (
+        <View style={styles.outdoorMap}>
+          <View style={styles.mapHeader}>
+            <Text style={styles.mapTitle}>🌍 Canlı Harita</Text>
+            <Text style={styles.mapSubtitle}>
+              {location ? 
+                `${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)}` :
+                'Konum alınıyor...'}
+            </Text>
+          </View>
+          
+          <View style={styles.compassContainer}>
+            <Text style={styles.compassLabel}>Pusula</Text>
+            <View style={[styles.compass, { transform: [{ rotate: `${heading}deg` }] }]}>
+              <Text style={styles.compassNeedle}>⬆️</Text>
+            </View>
+            <Text style={styles.headingText}>{Math.round(heading)}°</Text>
+          </View>
+
+          <View style={styles.venueIndicator}>
+            <Text style={styles.venueDistance}>
+              📍 {venue?.name || 'İzmir Şehir Hastanesi'}
+            </Text>
+            <Text style={styles.venueHint}>
+              Yaklaşın → İç mekan navigasyonu aktifleşecek
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    // Indoor corridor view
+    const nodesOnFloor = venue.nodes.filter(n => n.floorId === currentNode.floorId);
+    const edges = venue.edges || [];
+    
+    // Calculate bounds for mapping
+    const xs = nodesOnFloor.map(n => n.pos.x);
+    const ys = nodesOnFloor.map(n => n.pos.y);
+    const minX = Math.min(...xs) - 5;
+    const maxX = Math.max(...xs) + 5;
+    const minY = Math.min(...ys) - 5;
+    const maxY = Math.max(...ys) + 5;
+    const rangeX = (maxX - minX) || 1;
+    const rangeY = (maxY - minY) || 1;
+    const mapW = 280;
+    const mapH = 200;
+
+    const toScreen = (x: number, y: number) => ({
+      left: ((x - minX) / rangeX) * mapW,
+      top: ((y - minY) / rangeY) * mapH,
+    });
+
+    const screenNodes = nodesOnFloor.map(n => {
+      const sc = toScreen(n.pos.x, n.pos.y);
+      return { ...sc, node: n, active: n.id === currentNode.id };
+    });
+
+    // Draw corridors (edges)
+    const corridorPaths = edges.filter(e => {
+      const fromNode = venue.nodes.find(n => n.id === e.from);
+      const toNode = venue.nodes.find(n => n.id === e.to);
+      return fromNode?.floorId === currentNode.floorId && toNode?.floorId === currentNode.floorId;
+    }).map(e => {
+      const fromNode = venue.nodes.find(n => n.id === e.from)!;
+      const toNode = venue.nodes.find(n => n.id === e.to)!;
+      const from = toScreen(fromNode.pos.x, fromNode.pos.y);
+      const to = toScreen(toNode.pos.x, toNode.pos.y);
+      const dx = to.left - from.left;
+      const dy = to.top - from.top;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      return {
+        x: (from.left + to.left) / 2,
+        y: (from.top + to.top) / 2,
+        length,
+        angle,
+        kind: e.kind,
+      };
+    });
+
+    const colorByKind: Record<string, string> = {
+      walk: '#457b9d',
+      elevator: '#9b5de5', 
+      stairs: '#8d99ae',
+      escalator: '#2a9d8f',
+    };
+
+    return (
+      <View style={styles.indoorMap}>
+        <View style={styles.mapHeader}>
+          <Text style={styles.mapTitle}>🏢 İç Mekan Kroki</Text>
+          <Text style={styles.mapSubtitle}>Kat: {currentNode.floorId} | {currentNode.label}</Text>
+        </View>
+
+        <View style={[styles.corridorCanvas, { width: mapW, height: mapH }]}>
+          {/* Draw corridor paths */}
+          {corridorPaths.map((path, i) => (
+            <View
+              key={`path-${i}`}
+              style={{
+                position: 'absolute',
+                left: path.x - path.length / 2,
+                top: path.y - 3,
+                width: path.length,
+                height: path.kind === 'elevator' ? 8 : 6,
+                backgroundColor: colorByKind[path.kind] || '#457b9d',
+                transform: [{ rotate: `${path.angle}deg` }],
+                borderRadius: 3,
+                opacity: 0.7,
+              }}
+            />
+          ))}
+
+          {/* Draw rooms and nodes */}
+          {screenNodes.map((sn, i) => {
+            const icon = sn.node.type === 'room' ? '🚪' : 
+                        sn.node.type === 'brand' ? '🏢' : 
+                        sn.node.type === 'elevator' ? '⬆️' : '📍';
+            
+            return (
+              <View key={i} style={{ position: 'absolute', left: sn.left - 12, top: sn.top - 12 }}>
+                {/* Node background */}
+                <View style={[
+                  styles.nodeCircle,
+                  sn.active && styles.activeNode,
+                  { backgroundColor: sn.active ? '#e74c3c' : '#34495e' }
+                ]} />
+                
+                {/* Icon */}
+                <Text style={[
+                  styles.nodeIcon,
+                  { left: sn.active ? -8 : -6, top: sn.active ? -20 : -18 }
+                ]}>
+                  {icon}
+                </Text>
+                
+                {/* User position indicator */}
+                {sn.active && (
+                  <View style={[
+                    styles.userIndicator,
+                    { transform: [{ rotate: `${heading}deg` }] }
+                  ]}>
+                    <Text style={styles.userArrow}>👤</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Legend */}
+        <View style={styles.mapLegend}>
+          <Text style={styles.legendTitle}>Açıklama</Text>
+          <View style={styles.legendRow}>
+            <View style={[styles.legendLine, { backgroundColor: colorByKind.walk }]} />
+            <Text style={styles.legendText}>Yürüme</Text>
+            <View style={[styles.legendLine, { backgroundColor: colorByKind.elevator, height: 6 }]} />
+            <Text style={styles.legendText}>Asansör</Text>
+          </View>
+          <Text style={styles.legendIcons}>🚪 Oda  🏢 Marka  ⬆️ Asansör  👤 Siz</Text>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <View style={[styles.mainContent, { flexDirection: isMobileLayout ? 'column-reverse' : 'row' }]}>
-        <View style={isMobileLayout ? styles.panelContainerMobile : styles.panelContainerDesktop}>
-            <ControlPanel 
-               settings={corridorSettings} cameraZ={0} setCameraZ={() => {}} destination={destination} path={path}
-               history={history} onNewDestination={handleNewDestination} onPlaceSelected={handlePlaceSelected}
-               mapApiLoaded={false} userLocation={{ lat: location?.coords.latitude || 0, lng: location?.coords.longitude || 0 }}
-            />
-            <View style={styles.locationContainer}>
-              <Text style={styles.navigationHeader}>Navigasyon</Text>
-              {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
-              {!isNavigating ? (
-                <Button title="Start Navigation" onPress={startNavigation} />
-              ) : (
-                <Button title="Stop Navigation" onPress={stopNavigation} color="red" />
-              )}
-              <Text style={styles.instructionText}>{instruction}</Text>
-              {distance !== null && isNavigating && (
-                 <Text style={styles.locationText}>
-                   Hedefe olan mesafe: {distance.toFixed(0)} metre
-                 </Text>
-              )}
-            </View>
-        </View>
-        <View style={styles.canvasContainer}>
-          <Corridor3D 
-            key={heading}
-            cameraRotationY={heading ? (-heading * Math.PI / 180) : 0}
-            settings={corridorSettings} 
-            onNavigate={handleNavigate} 
-          />
-        </View>
+      {/* Top status bar */}
+      <View style={styles.statusBar}>
+        <Text style={styles.statusText}>
+          {isIndoor ? `📍 ${venue?.name || 'İç Mekan'} - ${currentNode?.label || '...'}` : '🌍 Dış Mekan'}
+        </Text>
+        {Platform.OS !== 'web' && <Text style={styles.heading}>🧭 {Math.round(heading)}°</Text>}
       </View>
-      <View style={styles.miniMapOverlay}>
-        <MiniMap heading={heading} bearing={bearing} />
-      </View>
-      <ChatBot lineColor={corridorSettings.lineColor} />
+
+      {/* Main content */}
+      <ScrollView style={styles.content}>
+        {/* Live Map */}
+        <View style={[styles.section, styles.mapSection]}>
+          <LiveMapView />
+        </View>
+
+        {/* Current position info */}
+        {isIndoor && currentNode && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Mevcut Konum</Text>
+            <Text style={styles.infoText}>🏢 {currentNode.label}</Text>
+            <Text style={styles.infoText}>🔢 Kat: {currentNode.floorId}</Text>
+            {getDoorSigns(venue?.id || '', currentNode.floorId, currentNode.pos, 20).slice(0, 3).map((sign, i) => (
+              <Text key={i} style={styles.signText}>
+                {sign.isSponsor ? '⭐' : '🚪'} {sign.label} ({sign.distance.toFixed(0)}m)
+              </Text>
+            ))}
+          </View>
+        )}
+
+        {/* Nearby users */}
+        {isIndoor && nearbyUsers.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Yakındaki Kullanıcılar</Text>
+            {nearbyUsers.map(user => (
+              <View key={user.id} style={styles.userCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.username}>{user.username}</Text>
+                  <Text style={styles.userDist}>{user.distance}m uzakta</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.msgBtn}
+                  onPress={() => handleMessageUser(user.id)}
+                >
+                  <Text style={styles.msgBtnText}>💬 Mesaj</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* 3D corridor view (live when indoor, preview otherwise) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🚶‍♂️ İç Mekan Navigasyon</Text>
+          <Corridor3DWrapper heading={heading} currentNodeLabel={currentNode?.label ?? 'Önizleme'} />
+          {!isIndoor && (
+            <Text style={styles.infoText}>
+              Bu bir önizlemedir — iç mekana yaklaştığınızda gerçek rota ve kapı bilgileri aktifleşecektir.
+            </Text>
+          )}
+        </View>
+
+        {!isIndoor && (
+          <View style={styles.section}>
+            <Text style={styles.infoText}>
+              📍 İç mekan navigasyonu için {venue?.name || 'hedefe'} yakınına gidin.
+            </Text>
+            {location && (
+              <Text style={styles.coordText}>
+                Koordinat: {location.coords.latitude.toFixed(6)}, {location.coords.longitude.toFixed(6)}
+              </Text>
+            )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  mainContent: { flex: 1 },
-  canvasContainer: { flex: 3 },
-  panelContainerDesktop: { flex: 1, maxWidth: 350 },
-  panelContainerMobile: { height: '40%', width: '100%' },
-  locationContainer: { padding: 10, backgroundColor: '#1c1c1c', margin: 10, borderRadius: 8 },
-  locationText: { color: '#aaa', fontSize: 14, textAlign: 'center' },
-  errorText: { color: 'red', fontSize: 16, textAlign: 'center' },
-  navigationHeader: { fontSize: 18, fontWeight: 'bold', color: '#fff', textAlign: 'center', marginBottom: 8 },
-  instructionText: { color: '#33FF99', fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 4 },
-  miniMapOverlay: { position: 'absolute', top: 50, left: 10, zIndex: 10 },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  statusBar: {
+    backgroundColor: '#1d3557',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statusText: { fontSize: 16, color: '#fff', fontWeight: '600' },
+  heading: { fontSize: 14, color: '#a8dadc' },
+  content: { flex: 1 },
+  section: {
+    backgroundColor: '#fff',
+    margin: 12,
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, color: '#333' },
+  infoText: { fontSize: 15, color: '#555', marginBottom: 6 },
+  signText: { fontSize: 14, color: '#666', marginLeft: 8, marginTop: 4 },
+  coordText: { fontSize: 13, color: '#888', marginTop: 8 },
+  userCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  username: { fontSize: 16, fontWeight: '600', color: '#333' },
+  userDist: { fontSize: 13, color: '#999', marginTop: 2 },
+  msgBtn: {
+    backgroundColor: '#457b9d',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  msgBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  mapSection: { paddingHorizontal: 8, paddingVertical: 12 },
+  outdoorMap: { 
+    minHeight: 220, 
+    backgroundColor: '#1a365d', 
+    borderRadius: 12, 
+    padding: 16,
+    alignItems: 'center' 
+  },
+  indoorMap: { 
+    minHeight: 280, 
+    backgroundColor: '#f8f9fa', 
+    borderRadius: 12, 
+    padding: 12 
+  },
+  mapHeader: { alignItems: 'center', marginBottom: 12 },
+  mapTitle: { fontSize: 18, fontWeight: '700', color: '#2c3e50', textAlign: 'center' },
+  mapSubtitle: { fontSize: 13, color: '#6c757d', marginTop: 4, textAlign: 'center' },
+  compassContainer: { alignItems: 'center', marginVertical: 16 },
+  compassLabel: { fontSize: 14, color: '#e9c46a', fontWeight: '600', marginBottom: 8 },
+  compass: { 
+    width: 60, 
+    height: 60, 
+    backgroundColor: '#264653', 
+    borderRadius: 30, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 3, 
+    borderColor: '#e9c46a' 
+  },
+  compassNeedle: { fontSize: 24, color: '#e76f51' },
+  headingText: { fontSize: 16, color: '#f4a261', fontWeight: '600', marginTop: 8 },
+  venueIndicator: { alignItems: 'center', marginTop: 12 },
+  venueDistance: { fontSize: 16, color: '#f1faee', fontWeight: '600' },
+  venueHint: { fontSize: 12, color: '#a8dadc', marginTop: 4, textAlign: 'center' },
+  corridorCanvas: { 
+    backgroundColor: '#e9ecef', 
+    borderRadius: 8, 
+    margin: 8,
+    alignSelf: 'center',
+    position: 'relative',
+    borderWidth: 2,
+    borderColor: '#dee2e6'
+  },
+  nodeCircle: { 
+    width: 24, 
+    height: 24, 
+    borderRadius: 12, 
+    borderWidth: 2, 
+    borderColor: '#fff' 
+  },
+  activeNode: { 
+    width: 28, 
+    height: 28, 
+    borderRadius: 14, 
+    borderWidth: 3, 
+    borderColor: '#fff',
+    shadowColor: '#e74c3c',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 5
+  },
+  nodeIcon: { position: 'absolute', fontSize: 12, left: -6, top: -18 },
+  userIndicator: { 
+    position: 'absolute', 
+    left: 6, 
+    top: -32, 
+    alignItems: 'center' 
+  },
+  userArrow: { fontSize: 16 },
+  mapLegend: { 
+    backgroundColor: '#fff', 
+    padding: 10, 
+    borderRadius: 8, 
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#e9ecef'
+  },
+  legendTitle: { fontSize: 13, fontWeight: '700', marginBottom: 6, color: '#495057' },
+  legendRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  legendLine: { width: 20, height: 4, borderRadius: 2, marginRight: 8 },
+  legendText: { fontSize: 11, color: '#6c757d', marginRight: 12 },
+  legendIcons: { fontSize: 11, color: '#6c757d', textAlign: 'center' },
 });

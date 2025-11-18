@@ -1,7 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
+import Constants from 'expo-constants';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+// Expo Constants üzerinden env değişkenlerini oku
+const supabaseUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_URL || 
+                    process.env.EXPO_PUBLIC_SUPABASE_URL || 
+                    '';
+const supabaseAnonKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
+                        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
+                        '';
+
+console.log('Supabase URL:', supabaseUrl ? 'Configured' : 'Missing');
+console.log('Supabase Key:', supabaseAnonKey ? 'Configured' : 'Missing');
 
 // Create a mock client if credentials are not available
 export const supabase = supabaseUrl && supabaseAnonKey 

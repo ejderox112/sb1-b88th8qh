@@ -1,434 +1,203 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  SafeAreaView,
-  Image,
-  FlatList,
-} from 'react-native';
-import { AuthService } from '../../lib/auth';
-import { supabase } from '../../lib/supabase';
-import { User, Suggestion } from '../../types';
-import { LogOut, Shield, MapPin, Clock, Check, X } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, Image, StyleSheet, FlatList, TouchableOpacity, Switch, ScrollView } from 'react-native';
+import { useRouter } from 'expo-router';
+
+interface Profile {
+  id: string;
+  nickname: string;
+  level: number;
+  xp: number;
+  avatar_url: string;
+  user_code: string;
+  location_sharing: boolean;
+  profile_visible: boolean;
+  indoor_nav_enabled: boolean;
+}
+
+interface Badge {
+  id: string;
+  icon_url: string;
+}
 
 export default function ProfileScreen() {
-  const [user, setUser] = useState<User | null>(null);
-  const [userSuggestions, setUserSuggestions] = useState<Suggestion[]>([]);
+  const router = useRouter();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [badges, setBadges] = useState<Badge[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const authService = new AuthService();
+  const [error, setError] = useState('');
+  const [locationSharing, setLocationSharing] = useState(true);
+  const [profileVisible, setProfileVisible] = useState(true);
+  const [indoorNavEnabled, setIndoorNavEnabled] = useState(false);
 
   useEffect(() => {
-    loadUserData();
+    // Basit mock profil yükle (Supabase'siz çalışmak için)
+    loadMockProfile();
+    loadMockBadges();
   }, []);
 
-  const loadUserData = async () => {
-    setLoading(true);
-    try {
-      const currentUser = await authService.getCurrentUser();
-      if (currentUser) {
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', currentUser.id)
-          .single();
-
-        if (userError) throw userError;
-        setUser(userData);
-
-        const { data: suggestionsData, error: suggestionsError } = await supabase
-          .from('suggestions')
-          .select('*')
-          .eq('createdBy', currentUser.id)
-          .order('createdAt', { ascending: false });
-
-        if (suggestionsError) throw suggestionsError;
-        setUserSuggestions(suggestionsData || []);
-      } else {
-        setUser(null);
-      }
-    } catch (error) {
-      console.error('Kullanıcı verileri yüklenemedi:', error);
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handleSignOut = async () => {
-    Alert.alert(
-      'Çıkış Yap',
-      'Çıkış yapmak istediğinizden emin misiniz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Çıkış Yap',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await authService.signOut();
-              setUser(null); 
-            } catch (error) {
-              Alert.alert('Hata', 'Çıkış yapılamadı');
-            }
-          },
-        },
-      ]
-    );
-  };
-  
-  const getStatusIcon = (status: Suggestion['status']) => {
-    switch (status) {
-      case 'pending': return <Clock size={16} color="#FFA500" />;
-      case 'approved': return <Check size={16} color="#28a745" />;
-      case 'rejected': return <X size={16} color="#dc3545" />;
-      default: return <Clock size={16} color="#666" />;
-    }
+  const loadMockProfile = () => {
+    console.log('Mock profil yükleniyor...');
+    setProfile({
+      id: 'demo-123',
+      nickname: 'Demo Kullanıcı',
+      level: 5,
+      xp: 500,
+      avatar_url: 'https://i.pravatar.cc/150?img=68',
+      user_code: 'DEMO123',
+      location_sharing: true,
+      profile_visible: true,
+      indoor_nav_enabled: false,
+    });
+    setLocationSharing(true);
+    setProfileVisible(true);
+    setIndoorNavEnabled(false);
+    setLoading(false);
   };
 
-  const getStatusText = (status: Suggestion['status']) => {
-    switch (status) {
-      case 'pending': return 'Bekliyor';
-      case 'approved': return 'Onaylandı';
-      case 'rejected': return 'Reddedildi';
-      default: return status;
-    }
+  const loadMockBadges = () => {
+    console.log('Mock rozetler yükleniyor...');
+    setBadges([
+      { id: 'badge-1', icon_url: 'https://img.icons8.com/emoji/96/trophy-emoji.png' },
+      { id: 'badge-2', icon_url: 'https://img.icons8.com/emoji/96/star-emoji.png' },
+      { id: 'badge-3', icon_url: 'https://img.icons8.com/emoji/96/fire.png' },
+      { id: 'badge-4', icon_url: 'https://img.icons8.com/emoji/96/crown-emoji.png' },
+    ]);
   };
 
-  const getTypeText = (type: string) => {
-    switch (type) {
-      case 'store': return 'Mağaza';
-      case 'wc': return 'WC';
-      case 'elevator': return 'Asansör';
-      case 'stairs': return 'Merdiven';
-      case 'restaurant': return 'Restoran';
-      case 'exit': return 'Çıkış';
-      case 'info': return 'Bilgi';
-      default: return type;
-    }
-  };
-
-  const renderSuggestion = ({ item }: { item: Suggestion }) => (
-    <View style={styles.suggestionItem}>
-      <View style={styles.suggestionHeader}>
-        <Text style={styles.suggestionName}>{item.poiName}</Text>
-        <View style={styles.statusContainer}>
-          {getStatusIcon(item.status)}
-          <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
-        </View>
-      </View>
-      <Text style={styles.suggestionType}>
-        {getTypeText(item.type)} - {item.floor}. Kat
-      </Text>
-      {item.description && (
-        <Text style={styles.suggestionDescription}>{item.description}</Text>
-      )}
-      <Text style={styles.suggestionDate}>
-        {new Date(item.createdAt).toLocaleDateString('tr-TR')}
-      </Text>
-    </View>
-  );
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text>Yükleniyor...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (!user) {
-    return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.loadingContainer}>
-                <Text>Kullanıcı bilgileri yüklenemedi. Lütfen giriş yapın.</Text>
-            </View>
-        </SafeAreaView>
-    );
-  }
-  
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Profil</Text>
-      </View>
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>👤 Profil</Text>
+      
+      {loading && <Text style={styles.info}>Yükleniyor...</Text>}
+      
+      {error && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>⚠️ {error}</Text>
+        </View>
+      )}
+      
+      {!loading && !error && profile && (
+        <>
+          <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+          <Text style={styles.name}>{profile.nickname || 'İsimsiz Kullanıcı'}</Text>
+          <Text style={styles.info}>Seviye: {profile.level || 0}</Text>
+          <Text style={styles.info}>XP: {profile.xp || 0}</Text>
+          <Text style={styles.info}>Kod: {profile.user_code}</Text>
+        </>
+      )}
+      
+      {!loading && !error && !profile && (
+        <Text style={styles.info}>Profil verisi bulunamadı.</Text>
+      )}
+      
+      <Text style={styles.badgeTitle}>🏆 Rozetler</Text>
+      <FlatList
+        data={badges}
+        keyExtractor={item => item.id}
+        horizontal
+        renderItem={({ item }) => (
+          <Image source={{ uri: item.icon_url }} style={styles.badge} />
+        )}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>Henüz rozet kazanılmadı</Text>
+        }
+      />
 
-      <View style={styles.profileSection}>
-        <View style={styles.profileInfo}>
-          {user.avatar ? (
-            <Image source={{ uri: user.avatar }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>
-                {user.name.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          )}
-          <View style={styles.userInfo}>
-            <Text style={styles.userName}>{user.name}</Text>
-            <Text style={styles.userEmail}>{user.email}</Text>
-            {user.role === 'admin' && (
-              <View style={styles.adminBadge}>
-                <Shield size={14} color="#fff" />
-                <Text style={styles.adminText}>Admin</Text>
-              </View>
-            )}
+      <View style={styles.settingsSection}>
+        <Text style={styles.sectionTitle}>⚙️ Gizlilik & Ayarlar</Text>
+        
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingLabel}>📍 Konum Paylaşımı</Text>
+            <Text style={styles.settingDesc}>Diğer kullanıcılar konumumu görebilir</Text>
           </View>
+          <Switch
+            value={locationSharing}
+            onValueChange={(value) => {
+              setLocationSharing(value);
+              console.log('Konum paylaşımı:', value);
+            }}
+          />
+        </View>
+
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingLabel}>👁️ Profil Görünürlüğü</Text>
+            <Text style={styles.settingDesc}>Profilim herkese açık</Text>
+          </View>
+          <Switch
+            value={profileVisible}
+            onValueChange={(value) => {
+              setProfileVisible(value);
+              console.log('Profil görünürlüğü:', value);
+            }}
+          />
+        </View>
+
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingLabel}>🧭 İç Mekan Navigasyon</Text>
+            <Text style={styles.settingDesc}>Bina içi konum takibi</Text>
+          </View>
+          <Switch
+            value={indoorNavEnabled}
+            onValueChange={(value) => {
+              setIndoorNavEnabled(value);
+              console.log('İç mekan navigasyon:', value);
+            }}
+          />
         </View>
       </View>
 
-      <View style={styles.statsSection}>
-        <View style={styles.statItem}>
-          <MapPin size={24} color="#007AFF" />
-          <Text style={styles.statNumber}>{userSuggestions.length}</Text>
-          <Text style={styles.statLabel}>Toplam Öneri</Text>
-        </View>
-        <View style={styles.statItem}>
-          <Check size={24} color="#28a745" />
-          <Text style={styles.statNumber}>
-            {userSuggestions.filter(s => s.status === 'approved').length}
-          </Text>
-          <Text style={styles.statLabel}>Onaylanan</Text>
-        </View>
-        <View style={styles.statItem}>
-          <Clock size={24} color="#FFA500" />
-          <Text style={styles.statNumber}>
-            {userSuggestions.filter(s => s.status === 'pending').length}
-          </Text>
-          <Text style={styles.statLabel}>Bekleyen</Text>
-        </View>
-      </View>
+      <View style={styles.navigationSection}>
+        <Text style={styles.sectionTitle}>🗺️ Navigasyon Özellikleri</Text>
+        
+        <TouchableOpacity style={styles.navButton}>
+          <Text style={styles.navButtonText}>📍 Harita Görünümü</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.navButton} onPress={() => router.push('/IndoorNavScreen' as any)}>
+          <Text style={styles.navButtonText}>🏢 İç Mekan Haritası</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.navButton} onPress={() => router.push('/IndoorContributeScreen' as any)}>
+          <Text style={styles.navButtonText}>➕ İç Mekan Öner</Text>
+        </TouchableOpacity>
 
-      <View style={styles.suggestionsSection}>
-        <Text style={styles.sectionTitle}>Önerilerim</Text>
-        <FlatList
-          data={userSuggestions}
-          renderItem={renderSuggestion}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MapPin size={48} color="#ccc" />
-              <Text style={styles.emptyText}>Henüz öneri yapmadınız</Text>
-            </View>
-          }
-        />
-      </View>
+        <TouchableOpacity style={styles.navButton} onPress={() => router.push('/IndoorModerationScreen' as any)}>
+          <Text style={styles.navButtonText}>🛠️ İç Mekan Onay (Admin)</Text>
+        </TouchableOpacity>
 
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-          <LogOut size={20} color="#dc3545" />
-          <Text style={styles.signOutText}>Çıkış Yap</Text>
+        <TouchableOpacity style={styles.navButton}>
+          <Text style={styles.navButtonText}>👥 Yakındaki Kullanıcılar</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.navButton}>
+          <Text style={styles.navButtonText}>🎯 Görev Konumları</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  profileSection: {
-    backgroundColor: '#fff',
-    margin: 16,
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  profileInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-  },
-  avatarPlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#007AFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  userInfo: {
-    marginLeft: 16,
-    flex: 1,
-  },
-  userName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  userEmail: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  adminBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6C5CE7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    gap: 4,
-  },
-  adminText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  statsSection: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 8,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
-  suggestionsSection: {
-    flex: 1,
-    marginHorizontal: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 12,
-  },
-  suggestionItem: {
-    backgroundColor: '#fff',
-    marginBottom: 12,
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  suggestionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  suggestionName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    flex: 1,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  suggestionType: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  suggestionDescription: {
-    fontSize: 14,
-    color: '#888',
-    fontStyle: 'italic',
-    marginBottom: 8,
-  },
-  suggestionDate: {
-    fontSize: 12,
-    color: '#999',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 12,
-  },
-  footer: {
-    padding: 16,
-  },
-  signOutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  signOutText: {
-    fontSize: 16,
-    color: '#dc3545',
-    fontWeight: '600',
-  },
+  container: { flex: 1, padding: 20 },
+  title: { fontSize: 22, fontWeight: 'bold' as const, marginBottom: 15 },
+  avatar: { width: 100, height: 100, borderRadius: 50, alignSelf: 'center', marginVertical: 10 },
+  name: { fontSize: 20, fontWeight: 'bold' as const, textAlign: 'center', marginVertical: 10 },
+  info: { fontSize: 14, color: '#666', textAlign: 'center', marginVertical: 5 },
+  badgeTitle: { marginTop: 20, fontSize: 16, fontWeight: 'bold' as const, marginBottom: 10 },
+  badge: { width: 50, height: 50, marginRight: 10 },
+  emptyText: { fontSize: 14, color: '#999', fontStyle: 'italic' as const },
+  errorBox: { backgroundColor: '#fee', padding: 15, borderRadius: 8, marginVertical: 10 },
+  errorText: { color: '#c00', fontSize: 14 },
+  settingsSection: { marginTop: 30, borderTopWidth: 1, borderTopColor: '#ddd', paddingTop: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold' as const, marginBottom: 15 },
+  settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  settingInfo: { flex: 1 },
+  settingLabel: { fontSize: 16, fontWeight: '600' as const, marginBottom: 4 },
+  settingDesc: { fontSize: 12, color: '#888' },
+  navigationSection: { marginTop: 30, marginBottom: 30 },
+  navButton: { backgroundColor: '#007AFF', padding: 15, borderRadius: 8, marginVertical: 8 },
+  navButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' as const, textAlign: 'center' },
 });

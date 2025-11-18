@@ -1,0 +1,2 @@
+cd "c:\Users\cocobongo\yeni sayfff\sb1-b88th8qh"
+npx expo start --tunnel

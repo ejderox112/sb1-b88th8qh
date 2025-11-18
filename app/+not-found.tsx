@@ -1,13 +1,12 @@
 import { Link, Stack } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
-import { Chrome as Home } from 'lucide-react-native';
 
 export default function NotFoundScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Sayfa Bulunamadı!' }} />
       <View style={styles.container}>
-        <Home size={64} color="#ccc" />
+        <Text style={styles.icon}>🏠</Text>
         <Text style={styles.title}>Bu sayfa mevcut değil</Text>
         <Text style={styles.subtitle}>Aradığınız sayfa bulunamadı</Text>
         <Link href="/" style={styles.link}>
@@ -26,9 +25,12 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#f8f9fa',
   },
+  icon: {
+    fontSize: 64,
+  },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: 'bold' as const,
     color: '#333',
     marginTop: 16,
   },
@@ -48,6 +50,6 @@ const styles = StyleSheet.create({
   linkText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '600' as const,
   },
 });

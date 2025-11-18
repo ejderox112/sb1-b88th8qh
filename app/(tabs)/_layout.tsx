@@ -1,9 +1,10 @@
 import { Tabs } from 'expo-router';
-import { MapPin, List, User, Settings } from 'lucide-react-native';
+import { Platform, Text } from 'react-native';
 
 export default function TabLayout() {
   return (
     <Tabs
+      initialRouteName="index"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#007AFF',
@@ -12,13 +13,13 @@ export default function TabLayout() {
           backgroundColor: '#fff',
           borderTopWidth: 1,
           borderTopColor: '#E5E5EA',
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 88,
+          paddingBottom: Platform.OS === 'web' ? 4 : 8,
+          paddingTop: Platform.OS === 'web' ? 4 : 8,
+          height: Platform.OS === 'web' ? 60 : 88,
         },
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: '600',
+          fontWeight: '600' as const,
         },
       }}
     >
@@ -27,7 +28,7 @@ export default function TabLayout() {
         options={{
           title: 'Harita',
           tabBarIcon: ({ size, color }) => (
-            <MapPin size={size} color={color} />
+            <Text style={{ fontSize: size, color: color, fontWeight: 'bold' as const }}>M</Text>
           ),
         }}
       />
@@ -36,7 +37,7 @@ export default function TabLayout() {
         options={{
           title: 'Konumlar',
           tabBarIcon: ({ size, color }) => (
-            <List size={size} color={color} />
+            <Text style={{ fontSize: size, color: color, fontWeight: 'bold' as const }}>L</Text>
           ),
         }}
       />
@@ -45,7 +46,16 @@ export default function TabLayout() {
         options={{
           title: 'Profil',
           tabBarIcon: ({ size, color }) => (
-            <User size={size} color={color} />
+            <Text style={{ fontSize: size, color: color, fontWeight: 'bold' as const }}>P</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="indoor"
+        options={{
+          title: 'İç Mekan',
+          tabBarIcon: ({ size, color }) => (
+            <Text style={{ fontSize: size, color: color, fontWeight: 'bold' as const }}>İ</Text>
           ),
         }}
       />

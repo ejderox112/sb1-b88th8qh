@@ -1,0 +1,8 @@
+{
+    "github.copilot.nextEditSuggestions.enabled": true,
+    "workbench.colorTheme": "Default High Contrast",
+    "chat.experimental.terminal.executeWithoutConfirmation": true,
+    "chat.tools.terminal.autoApprove": {
+        // ... diğer ayarlar
+    }
+}
