@@ -1,10 +1,72 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import * as Google from 'expo-auth-session/providers/google';
+import IndoorChatScreen from './IndoorChatScreen';
+import AddFriendScreen from './AddFriendScreen';
+import { TextInput } from 'react-native';
+import { supabase } from '@/lib/supabase';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { findRoute } from '@/lib/indoor/pathfinder';
 import { getNearbyDoorSigns } from '@/lib/indoor/signage';
 import { getActiveVenue, getDoorSigns } from '@/lib/indoor/store';
 
 export default function IndoorNavScreen() {
+  // Profil ekleme formu için state
+  const [profileName, setProfileName] = useState('');
+  const [profileNick, setProfileNick] = useState('');
+  const [profileInfo, setProfileInfo] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  });
+
+  // Kullanıcı login kontrolü
+  useEffect(() => {
+    const checkUser = async () => {
+      const user = await supabase.auth.getUser();
+      setIsLoggedIn(!!user?.data?.user?.id);
+    };
+    checkUser();
+  }, []);
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response;
+      supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: authentication.idToken,
+      }).then(() => {
+        setIsLoggedIn(true);
+        setInfoMsg('Giriş başarılı!');
+        setErrorMsg('');
+      }).catch(e => {
+        setErrorMsg('Google ile giriş başarısız: ' + e.message);
+      });
+    }
+  }, [response]);
+
+  const addProfile = async () => {
+    if (!profileName.trim() || !profileNick.trim()) {
+      setProfileInfo('İsim ve nick zorunlu');
+      return;
+    }
+    const user = await supabase.auth.getUser();
+    if (!user?.data?.user?.id) {
+      setProfileInfo('Profil eklemek için önce giriş yapmalısınız.');
+      return;
+    }
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert({ id: user.data.user.id, display_name: profileName, nickname: profileNick });
+    if (error) setProfileInfo('Kayıt başarısız: ' + error.message);
+    else setProfileInfo('Profil başarıyla eklendi');
+    setProfileName('');
+    setProfileNick('');
+  };
   const venue = getActiveVenue('izmir-sehir-hastanesi');
   if (!venue) return <View style={styles.container}><Text>Venue bulunamadı</Text></View>;
   const startId = 'entrance';
@@ -209,66 +271,70 @@ export default function IndoorNavScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>İç Mekan Navigasyon</Text>
 
-      <View style={styles.destRow}>
-        <TouchableOpacity
-          style={[styles.destButton, targetId === 'room112' && styles.destButtonActive]}
-          onPress={() => setTargetId('room112')}
-        >
-          <Text style={styles.destText}>🎯 Oda 112</Text>
+      {/* Mevcut kullanıcı girişi */}
+      <View style={styles.profileBox}>
+        <Text style={styles.sectionHeader}>Mevcut Kullanıcı/Admin Girişi</Text>
+        <TouchableOpacity style={styles.primary} onPress={() => promptAsync()}>
+          <Text style={styles.primaryText}>Google ile Giriş Yap</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.destButton, targetId === 'brandXXX' && styles.destButtonActive]}
-          onPress={() => setTargetId('brandXXX')}
-        >
-          <Text style={styles.destText}>🏢 XXX Firması</Text>
-        </TouchableOpacity>
+        <Text style={{ color: '#888', marginTop: 6, fontSize: 13 }}>
+          Zaten hesabınız veya admin yetkiniz varsa, buradan giriş yapabilirsiniz.
+        </Text>
+        {errorMsg ? <Text style={{ color: 'red', marginTop: 8 }}>{errorMsg}</Text> : null}
+        {infoMsg ? <Text style={{ color: 'green', marginTop: 8 }}>{infoMsg}</Text> : null}
       </View>
 
-      <TouchableOpacity style={styles.primary} onPress={buildRoute}>
-        <Text style={styles.primaryText}>Rota Oluştur</Text>
-      </TouchableOpacity>
+      {/* Yeni kullanıcı ekleme formu */}
+      <View style={styles.profileBox}>
+        <Text style={styles.sectionHeader}>Yeni Kullanıcı Oluştur</Text>
+        <TextInput
+          style={styles.input}
+          value={profileName}
+          onChangeText={setProfileName}
+          placeholder="İsim"
+        />
+        <TextInput
+          style={styles.input}
+          value={profileNick}
+          onChangeText={setProfileNick}
+          placeholder="Nick"
+        />
+        <TouchableOpacity style={styles.primary} onPress={addProfile}>
+          <Text style={styles.primaryText}>Profil Ekle</Text>
+        </TouchableOpacity>
+        {profileInfo ? <Text style={styles.info}>{profileInfo}</Text> : null}
+      </View>
 
-      {!!routeNodeIds.length && (
-        <View style={styles.panel}>
-          <Text style={styles.subTitle}>Toplam Mesafe: {distance} m</Text>
-          <View style={styles.controls}>
-            <TouchableOpacity style={styles.ctrlBtn} onPress={stepBack}><Text>◀︎</Text></TouchableOpacity>
-            <Text style={styles.stepInfo}>Adım {idx + 1}/{routeNodeIds.length}</Text>
-            <TouchableOpacity style={styles.ctrlBtn} onPress={stepForward}><Text>▶︎</Text></TouchableOpacity>
-          </View>
-
-          <MiniMap />
-
-          <Text style={styles.sectionHeader}>Yönlendirmeler</Text>
-          <FlatList
-            data={steps}
-            keyExtractor={(s, i) => s.nodeId + ':' + i}
-            renderItem={({ item, index }) => (
-              <View style={[styles.stepRow, index === idx && styles.stepActive]}> 
-                <Text style={styles.stepText}>{index + 1}. {item.instruction}</Text>
-              </View>
-            )}
-          />
-
-          <Text style={styles.sectionHeader}>Kapı Üstü İsimlikler</Text>
-          <FlatList
-            data={currentSigns}
-            keyExtractor={(s, i) => s.nodeId + ':' + i}
-            renderItem={({ item }) => (
-              <View style={[styles.signRow, item.isSponsored && styles.signSponsored]}>
-                <Text style={styles.signText}>{item.label} {item.isSponsored ? '• Sponsorlu' : ''} • {item.distance} m</Text>
-              </View>
-            )}
-            ListEmptyComponent={<Text style={styles.empty}>Yakında isimlik yok</Text>}
-          />
-        </View>
-      )}
+      {/* Sohbet ve Arkadaş Ekle bölümleri */}
+      <View style={styles.sectionBox}>
+        <Text style={styles.sectionHeader}>Sohbet</Text>
+        {isLoggedIn ? (
+          <IndoorChatScreen />
+        ) : (
+          <Text style={{ color: '#888', fontStyle: 'italic', marginTop: 8 }}>
+            Sohbet için önce giriş yapmalısınız.
+          </Text>
+        )}
+      </View>
+      <View style={styles.sectionBox}>
+        <Text style={styles.sectionHeader}>Arkadaş Ekle</Text>
+        {isLoggedIn ? (
+          <AddFriendScreen />
+        ) : (
+          <Text style={{ color: '#888', fontStyle: 'italic', marginTop: 8 }}>
+            Arkadaş eklemek için önce giriş yapmalısınız.
+          </Text>
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
+  profileBox: { backgroundColor: '#f8f8f8', padding: 12, borderRadius: 10, marginBottom: 16 },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 8, marginBottom: 8 },
+  info: { marginTop: 8, color: '#007AFF', fontWeight: '600' },
   title: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
   destRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   destButton: { paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#ccc', borderRadius: 8 },

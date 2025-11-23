@@ -4,9 +4,11 @@ import { supabase } from '../lib/supabase';
 
 export default function LeaderboardScreen() {
   const [leaders, setLeaders] = useState([]);
+  const [badgesMap, setBadgesMap] = useState({});
 
   useEffect(() => {
     fetchLeaderboard();
+    fetchBadges();
   }, []);
 
   const fetchLeaderboard = async () => {
@@ -14,6 +16,17 @@ export default function LeaderboardScreen() {
       .rpc('weekly_leaderboard')
       .select('*');
     setLeaders(data);
+  };
+
+  const fetchBadges = async () => {
+    const { getSupporterBadges } = await import('@/lib/supporterBadgeLogic');
+    // Tüm liderlerin rozetlerini çek
+    const badgeResults = {};
+    for (const leader of leaders) {
+      const { data } = await getSupporterBadges(leader.user_id);
+      badgeResults[leader.user_id] = data || [];
+    }
+    setBadgesMap(badgeResults);
   };
 
   return (
@@ -25,6 +38,14 @@ export default function LeaderboardScreen() {
         renderItem={({ item, index }) => (
           <View style={styles.card}>
             <Text>{index + 1}. {item.nickname} — {item.weekly_points} puan</Text>
+            {/* Destekçi Rozetleri */}
+            {badgesMap[item.user_id] && badgesMap[item.user_id].length > 0 && (
+              <View style={styles.badgeRow}>
+                {badgesMap[item.user_id].map((badge, idx) => (
+                  <Text key={idx} style={styles.badgeItem}>{badge.badge}</Text>
+                ))}
+              </View>
+            )}
           </View>
         )}
       />
@@ -40,5 +61,19 @@ const styles = StyleSheet.create({
     marginVertical: 5,
     backgroundColor: '#eee',
     borderRadius: 8,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+  },
+  badgeItem: {
+    backgroundColor: '#ffd700',
+    color: '#333',
+    fontWeight: 'bold',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginRight: 4,
+    fontSize: 13,
   },
 });
