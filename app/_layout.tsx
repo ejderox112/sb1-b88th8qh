@@ -40,7 +40,8 @@ export default function Layout() {
                 try {
                   // Session'ın storage'a yazılması için kısa bir bekleme
                   setTimeout(() => {
-                    window.opener.location.reload(); 
+                    // Ana pencereyi ana sayfaya yönlendir
+                    window.opener.location.href = window.opener.location.origin + '/';
                     window.close(); 
                   }, 1000);
                   return;
