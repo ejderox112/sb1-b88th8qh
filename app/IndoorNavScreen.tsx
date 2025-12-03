@@ -12,7 +12,7 @@ import { getNearbyDoorSigns } from '@/lib/indoor/signage';
 import { getActiveVenue, getDoorSigns } from '@/lib/indoor/store';
 
 export default function IndoorNavScreen() {
-  const isDev = process.env.NODE_ENV !== 'production';
+  const isDev = false; // Debug mesajlarını kapat
   // Profil ekleme formu için state
   const [profileName, setProfileName] = useState('');
   const [profileNick, setProfileNick] = useState('');

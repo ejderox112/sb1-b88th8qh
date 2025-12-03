@@ -56,7 +56,11 @@ export function useAutoAuth() {
 
       console.log('Yeni profil oluşturuluyor...', userId);
       const username = email?.split('@')[0] || `kullanici_${userId.substring(0, 8)}`;
-      const nickname = fullName || `Kullanıcı ${Math.floor(Math.random() * 1000)}`;
+      
+      // Admin email kontrolü ve özel nickname ataması
+      const adminEmails = ['ejderha112@gmail.com'];
+      const isAdmin = email && adminEmails.includes(email.toLowerCase());
+      const nickname = isAdmin ? 'SeekMap' : (fullName || `Kullanıcı ${Math.floor(Math.random() * 1000)}`);
       
       const { error } = await supabase
         .from('user_profiles')
@@ -65,10 +69,12 @@ export function useAutoAuth() {
           email: email,
           username: username,
           nickname: nickname,
-          level: 1,
-          xp: 0,
-          trust_score: 50,
+          level: isAdmin ? 99 : 1,
+          xp: isAdmin ? 999999 : 0,
+          trust_score: isAdmin ? 100 : 50,
           user_code: `U${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
+          nickname_locked: isAdmin,
+          can_bypass_photo_limit: isAdmin,
         });
 
       if (error) {

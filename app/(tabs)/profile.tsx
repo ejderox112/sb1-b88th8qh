@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet, FlatList, TouchableOpacity, Switch, ScrollView, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { validateNickname } from '@/lib/nicknameValidation';
 
 interface Profile {
   id: string;
@@ -195,12 +196,22 @@ export default function ProfileScreen() {
     const nickname = nicknameInput.trim();
     const userCode = normalizeCode(codeInput);
 
-    if (!nickname) {
-      setError('Kullanıcı adı boş bırakılamaz.');
+    if (!nickname.trim()) {
+      setError('Kullanıcı adı boş olamaz.');
       return;
     }
-    if (nickname.length < 3) {
-      setError('Kullanıcı adı en az 3 karakter olmalı.');
+    
+    // Nickname lock kontrolü
+    if (profile.nickname_locked) {
+      setError('Kullanıcı adınız değiştirilemez (admin tarafından kilitlenmiş).');
+      return;
+    }
+    
+    // Nickname validation
+    const isAdmin = profile.level >= 99; // Admin seviyesi kontrolü
+    const nicknameValidation = validateNickname(nickname, isAdmin);
+    if (!nicknameValidation.valid) {
+      setError(nicknameValidation.error || 'Geçersiz kullanıcı adı');
       return;
     }
     if (!/^[A-Za-z0-9_.-]{3,20}$/.test(userCode)) {
