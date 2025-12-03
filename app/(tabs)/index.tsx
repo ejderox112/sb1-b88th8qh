@@ -1,32 +1,64 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert, Switch } from 'react-native';
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { getActiveVenue, getDoorSigns } from '@/lib/indoor/store';
 import type { Node as IndoorNode } from '@/lib/indoor/types';
 import Corridor3DWrapper from '@/components/Corridor3DWrapper';
+import { useNearbyUsers } from '@/hooks/useNearbyUsers';
+import type { NearbyUserSnapshot } from '@/hooks/useNearbyUsers';
+import type { User } from '@supabase/supabase-js';
 
 // Mock GPS coordinates for demo (İzmir Şehir Hastanesi)
 const DEMO_VENUE_LAT = 38.4613;
 const DEMO_VENUE_LON = 27.2069;
 
-interface NearbyUser {
-  id: string;
-  username: string;
-  avatar?: string;
-  nodeId: string;
-  floorId: string;
-  distance: number;
-}
-
 export default function MapTabScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [heading, setHeading] = useState(0);
   const [currentNode, setCurrentNode] = useState<IndoorNode | null>(null);
-  const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
   const [isIndoor, setIsIndoor] = useState(false);
+  const [sessionUser, setSessionUser] = useState<User | null>(null);
+  const [settings, setSettings] = useState({ locationSharing: true, nearbyVisibility: true });
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const venue = getActiveVenue();
+  const lastPublishRef = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (!active) return;
+        const user = data?.user ?? null;
+        setSessionUser(user);
+        if (!user) {
+          setSettingsLoading(false);
+          return;
+        }
+        const { data: profile, error } = await supabase
+          .from('user_profiles')
+          .select('location_sharing, nearby_visibility_enabled')
+          .eq('id', user.id)
+          .single();
+        if (error) throw error;
+        setSettings({
+          locationSharing: profile?.location_sharing ?? true,
+          nearbyVisibility: profile?.nearby_visibility_enabled ?? true,
+        });
+      } catch (err: any) {
+        if (!active) return;
+        setSettingsError(err?.message ?? 'Profil ayarları yüklenemedi.');
+      } finally {
+        if (active) setSettingsLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // GPS Tracking
   useEffect(() => {
@@ -97,26 +129,60 @@ export default function MapTabScreen() {
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   };
 
-  // Realtime nearby users (mock for now)
+  const nearbyHook = useNearbyUsers({
+    enabled: settings.locationSharing && settings.nearbyVisibility && !!location,
+    origin: location?.coords ? { lat: location.coords.latitude, lng: location.coords.longitude } : null,
+    radiusMeters: 500,
+    venueId: venue?.id ?? null,
+  });
+  const nearbyUsers = nearbyHook.users;
+
   useEffect(() => {
-    if (!isIndoor || !currentNode) return;
+    if (!sessionUser || !location || !settings.locationSharing) return;
+    const now = Date.now();
+    if (now - lastPublishRef.current < 5000) return;
+    lastPublishRef.current = now;
+    const payload = {
+      user_id: sessionUser.id,
+      lat: location.coords.latitude,
+      lng: location.coords.longitude,
+      accuracy: location.coords.accuracy ?? null,
+      is_sharing: settings.nearbyVisibility,
+      metadata: { venue_id: venue?.id ?? null },
+      updated_at: new Date().toISOString(),
+    } as const;
+    supabase
+      .from('live_locations')
+      .upsert(payload, { onConflict: 'user_id' })
+      .catch(err => {
+        console.warn('Live location publish failed', err?.message || err);
+      });
+  }, [sessionUser?.id, location?.coords?.latitude, location?.coords?.longitude, settings.locationSharing, settings.nearbyVisibility, venue?.id]);
 
-    // Mock nearby users
-    const mockUsers: NearbyUser[] = [
-      { id: '1', username: 'Ahmet K.', nodeId: 'entrance', floorId: '0', distance: 5 },
-      { id: '2', username: 'Zeynep A.', nodeId: 'elevator1', floorId: '0', distance: 12 },
-    ];
-    setNearbyUsers(mockUsers);
+  const toggleNearbyVisibility = async () => {
+    if (!sessionUser) {
+      Alert.alert('Giriş Gerekli', 'Yakındaki kullanıcı ayarını değiştirmek için giriş yapmalısınız.');
+      return;
+    }
+    const next = !settings.nearbyVisibility;
+    setSettings(prev => ({ ...prev, nearbyVisibility: next }));
+    try {
+      await supabase
+        .from('user_profiles')
+        .update({ nearby_visibility_enabled: next })
+        .eq('id', sessionUser.id);
+    } catch (err: any) {
+      setSettings(prev => ({ ...prev, nearbyVisibility: !next }));
+      Alert.alert('Hata', err?.message ?? 'Ayar güncellenemedi.');
+    }
+  };
 
-    // TODO: Supabase realtime subscription
-    // const channel = supabase.channel('indoor-users')
-    //   .on('presence', { event: 'sync' }, () => { ... })
-    //   .subscribe();
-    // return () => { channel.unsubscribe(); };
-  }, [isIndoor, currentNode]);
-
-  const handleMessageUser = (userId: string) => {
-    Alert.alert('Mesaj Gönder', `${userId} kullanıcısına mesaj göndermek için mesaj ekranına yönlendiriliyorsunuz.`);
+  const handleMessageUser = (user: NearbyUserSnapshot) => {
+    if (!user.messagesOptIn) {
+      Alert.alert('Yasak', 'Bu kullanıcı mesaj isteklerini kapatmış.');
+      return;
+    }
+    Alert.alert('Mesaj Gönder', `${user.nickname} kullanıcısına mesaj göndermek için mesaj ekranına yönlendiriliyorsunuz.`);
     // TODO: Navigate to ChatScreen with userId
   };
 
@@ -321,25 +387,52 @@ export default function MapTabScreen() {
         )}
 
         {/* Nearby users */}
-        {isIndoor && nearbyUsers.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Yakındaki Kullanıcılar</Text>
-            {nearbyUsers.map(user => (
-              <View key={user.id} style={styles.userCard}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.username}>{user.username}</Text>
-                  <Text style={styles.userDist}>{user.distance}m uzakta</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.msgBtn}
-                  onPress={() => handleMessageUser(user.id)}
-                >
-                  <Text style={styles.msgBtnText}>💬 Mesaj</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+        <View style={styles.section}>
+          <View style={styles.toggleHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionTitle}>Yakındaki Kullanıcılar</Text>
+              <Text style={styles.infoText}>
+                500 m çemberi · {nearbyUsers.length} kişi bulundu
+              </Text>
+            </View>
+            <Switch value={settings.nearbyVisibility} onValueChange={toggleNearbyVisibility} />
           </View>
-        )}
+          {settingsError && <Text style={styles.warningText}>{settingsError}</Text>}
+          {settingsLoading && <Text style={styles.infoText}>Ayarlar yükleniyor...</Text>}
+          {nearbyHook.error && <Text style={styles.warningText}>{nearbyHook.error}</Text>}
+          {!settings.locationSharing && !settingsLoading && (
+            <Text style={styles.warningText}>
+              Konum paylaşımı profil ekranından kapalı olduğu için yakındaki kullanıcılar gizlendi.
+            </Text>
+          )}
+          {settings.locationSharing && settings.nearbyVisibility && (
+            <>
+              {nearbyHook.isLoading ? (
+                <Text style={styles.infoText}>Yakındaki kullanıcılar yükleniyor...</Text>
+              ) : nearbyUsers.length === 0 ? (
+                <Text style={styles.infoText}>Şu anda 500 m içinde başka kullanıcı yok.</Text>
+              ) : (
+                nearbyUsers.map(user => (
+                  <View key={user.userId} style={styles.userCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.username}>{user.nickname}</Text>
+                      <Text style={styles.userDist}>{Math.round(user.distanceMeters)} m uzakta</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.msgBtn, !user.messagesOptIn && styles.msgBtnDisabled]}
+                      disabled={!user.messagesOptIn}
+                      onPress={() => handleMessageUser(user)}
+                    >
+                      <Text style={styles.msgBtnText}>
+                        {user.messagesOptIn ? '💬 Mesaj' : '🔒 Kapalı'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+            </>
+          )}
+        </View>
 
         {/* 3D corridor view (live when indoor, preview otherwise) */}
         <View style={styles.section}>
@@ -412,7 +505,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
   },
+  msgBtnDisabled: {
+    backgroundColor: '#b0bec5',
+  },
   msgBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  warningText: { fontSize: 13, color: '#c0392b', marginBottom: 6 },
+  toggleHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   mapSection: { paddingHorizontal: 8, paddingVertical: 12 },
   outdoorMap: { 
     minHeight: 220, 

@@ -15,7 +15,7 @@ export default function IndoorChatScreen() {
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [input, setInput] = useState('');
   const [userId, setUserId] = useState('');
-  const groupId = 'demo-group-1'; // örnek grup id, dinamik yapılabilir
+  const [groupId, setGroupId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -23,9 +23,28 @@ export default function IndoorChatScreen() {
       if (data?.user?.id) setUserId(data.user.id);
     };
     fetchUser();
+
+    // Demo grubun ID'sini veritabanından çek
+    const fetchGroup = async () => {
+      const { data, error } = await supabase
+        .from('groups')
+        .select('id')
+        .eq('slug', 'demo-group-1')
+        .single();
+      
+      if (data) {
+        console.log('Grup ID bulundu:', data.id);
+        setGroupId(data.id);
+      } else {
+        console.error('Demo grup bulunamadı:', error);
+      }
+    };
+    fetchGroup();
   }, []);
 
   useEffect(() => {
+    if (!groupId) return;
+
     const fetchMessages = async () => {
       const { data, error } = await supabase
         .from('group_messages')
@@ -33,28 +52,44 @@ export default function IndoorChatScreen() {
         .eq('group_id', groupId)
         .order('created_at', { ascending: false });
       if (data) setMessages(data);
+      if (error) console.error('Mesajlar çekilemedi:', error);
     };
     fetchMessages();
-    // Realtime dinleme eklenebilir
+    
+    // Realtime dinleme
+    const channel = supabase
+      .channel('public:group_messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `group_id=eq.${groupId}` },
+        (payload) => {
+          setMessages((prev) => [payload.new as GroupMessage, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [groupId]);
 
   const sendMessage = async () => {
-    if (!input.trim() || !userId) return;
-    await supabase.from('group_messages').insert({
+    if (!input.trim() || !userId || !groupId) return;
+    
+    const { error } = await supabase.from('group_messages').insert({
       group_id: groupId,
       sender_id: userId,
       content: input,
       type: 'text',
       created_at: new Date().toISOString(),
     });
-    setInput('');
-    // Mesajları tekrar çek
-    const { data } = await supabase
-      .from('group_messages')
-      .select('*')
-      .eq('group_id', groupId)
-      .order('created_at', { ascending: false });
-    if (data) setMessages(data);
+
+    if (error) {
+      console.error('Mesaj gönderme hatası:', error);
+    } else {
+      setInput('');
+      // Realtime zaten listeyi güncelleyecek
+    }
   };
 
   return (

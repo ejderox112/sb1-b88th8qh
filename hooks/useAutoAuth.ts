@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export function useAutoAuth() {
   const [isReady, setIsReady] = useState(false);
@@ -11,6 +11,13 @@ export function useAutoAuth() {
 
   const initAuth = async () => {
     try {
+      if (!isSupabaseConfigured) {
+        console.warn('useAutoAuth: Supabase yapılandırılmadı, kullanıcı oturumu başlatılmayacak.');
+        setIsReady(true);
+        setUser(null);
+        return;
+      }
+
       // Mevcut kullanıcıyı kontrol et
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       
@@ -22,19 +29,8 @@ export function useAutoAuth() {
         return;
       }
 
-      // Kullanıcı yoksa demo user oluştur (Supabase'e bağlanmadan)
-      console.log('Kullanıcı bulunamadı, demo mod başlatılıyor...');
-      const demoUserId = `demo-${Date.now()}`;
-      const demoEmail = `user_${Date.now()}@demo.local`;
-      
-      setUser({
-        id: demoUserId,
-        email: demoEmail,
-        user_metadata: {},
-      } as any);
-      
-      // Demo profil oluştur
-      await createDemoProfile(demoUserId, demoEmail);
+      console.log('Oturum bulunamadı. Kullanıcıyı giriş ekranına yönlendirin.');
+      setUser(null);
       setIsReady(true);
     } catch (err) {
       console.error('Auth hatası:', err);
@@ -75,31 +71,6 @@ export function useAutoAuth() {
       }
     } catch (err) {
       console.error('ensureProfile hatası:', err);
-    }
-  };
-
-  const createDemoProfile = async (userId: string, email: string) => {
-    try {
-      console.log('Demo profil oluşturuluyor...');
-      const { error } = await supabase
-        .from('user_profiles')
-        .insert({
-          id: userId,
-          email: email,
-          username: `kullanici_${userId.substring(0, 8)}`,
-          nickname: `Demo Kullanıcı ${Math.floor(Math.random() * 1000)}`,
-          level: 5,
-          xp: 500,
-          user_code: `D${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-        });
-
-      if (error) {
-        console.error('Demo profil oluşturma hatası:', error);
-      } else {
-        console.log('Demo profil başarıyla oluşturuldu');
-      }
-    } catch (err) {
-      console.error('createDemoProfile hatası:', err);
     }
   };
 

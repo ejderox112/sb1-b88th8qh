@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
 import ErrorMessage from '@/components/ErrorMessage';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
@@ -8,21 +8,68 @@ import { supabase } from '@/lib/supabase';
 
 export default function LocationsScreen() {
   const [userRole, setUserRole] = useState<string>('user');
-    const [topSupporters, setTopSupporters] = useState<any[]>([]);
-    const [selectedProject, setSelectedProject] = useState<string>('default_project_id');
-    const [errorMsg, setErrorMsg] = useState('');
+  const [userId, setUserId] = useState<string | null>(null);
+  const [supportersByProject, setSupportersByProject] = useState<Record<string, any[]>>({});
+  const [errorMsg, setErrorMsg] = useState('');
+  const [supporterMsg, setSupporterMsg] = useState('');
+  const [donationLoadingProject, setDonationLoadingProject] = useState<string | null>(null);
+
+  const projects = useMemo(
+    () => [
+      { name: 'EgePark AVM', id: 'egepark' },
+      { name: 'Forum Bornova', id: 'forum' },
+      { name: 'İzmir Şehir Hastanesi', id: 'hastane' },
+      { name: 'Optimum AVM', id: 'optimum' },
+      { name: 'Agora AVM', id: 'agora' },
+    ],
+    []
+  );
 
   useEffect(() => {
     checkUserRole();
-      fetchTopSupporters(selectedProject);
   }, []);
 
-    const fetchTopSupporters = async (projectId: string) => {
-      setSelectedProject(projectId);
+  useEffect(() => {
+    projects.forEach((proj) => fetchTopSupporters(proj.id));
+  }, [projects]);
+
+  const fetchTopSupporters = async (projectId: string) => {
+    try {
       const { getTopSupportersWithProfile } = await import('@/lib/supporterTopLogic');
-      const { data } = await getTopSupportersWithProfile(projectId);
-      setTopSupporters(data || []);
-    };
+      const { data, error } = await getTopSupportersWithProfile(projectId);
+      if (error) throw error;
+      setSupportersByProject((prev) => ({ ...prev, [projectId]: data || [] }));
+    } catch (err: any) {
+      console.error('Destekçi verisi alınamadı:', err);
+      setErrorMsg('Destekçi listesi yüklenirken hata oluştu.');
+    }
+  };
+
+  const handleMockDonate = async (projectId: string, amount: number) => {
+    setErrorMsg('');
+    setSupporterMsg('');
+    if (!userId) {
+      setErrorMsg('Bağış yapmak için önce giriş yapmalısınız.');
+      return;
+    }
+    setDonationLoadingProject(projectId);
+    try {
+      const { error } = await supabase.from('supporters').insert({
+        user_id: userId,
+        project_id: projectId,
+        amount,
+        date: new Date().toISOString(),
+      });
+      if (error) throw error;
+      setSupporterMsg(`Teşekkür ederiz! ${amount} TL destek kaydedildi.`);
+      await fetchTopSupporters(projectId);
+    } catch (err: any) {
+      console.error('Bağış kaydedilemedi', err);
+      setErrorMsg(err?.message || 'Bağış kaydedilemedi.');
+    } finally {
+      setDonationLoadingProject(null);
+    }
+  };
   const getAdminOverrides = () => {
     const extras = Constants.expoConfig?.extra ?? {};
     const overrideEmailsRaw = extras?.EXPO_PUBLIC_ADMIN_OVERRIDE_EMAILS ?? process.env.EXPO_PUBLIC_ADMIN_OVERRIDE_EMAILS ?? '';
@@ -47,6 +94,8 @@ export default function LocationsScreen() {
         }
         return;
       }
+
+      setUserId(user.id);
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -173,13 +222,26 @@ export default function LocationsScreen() {
       <View style={styles.supportSection}>
         <Text style={styles.sectionTitle}>Program Destekçisi Ol</Text>
         <Text style={styles.supportDesc}>Yeni iç mekan haritalandırma projeleri için oy ver, destek ol, bağış yap!</Text>
-        {[{name:'EgePark AVM',id:'egepark'},{name:'Forum Bornova',id:'forum'},{name:'İzmir Şehir Hastanesi',id:'hastane'},{name:'Optimum AVM',id:'optimum'},{name:'Agora AVM',id:'agora'}].map((proj, idx) => (
-          <View key={proj.id} style={styles.projectCard}>
+        {projects.map((proj, idx) => {
+          const supporters = supportersByProject[proj.id] || [];
+          return (
+            <View key={proj.id} style={styles.projectCard}>
             <Text style={styles.projectTitle}>{idx+1}. {proj.name}</Text>
-            <Text style={styles.projectSupportInfo}>Bu projeye 1 destek, xxx adlı kullanıcıdan.</Text>
-            <TouchableOpacity style={styles.donateButton} onPress={() => {/* TODO: Payment integration */}}>
-              <Text style={styles.donateButtonText}>Bu Projeye Destek Ol (Bağış Yap)</Text>
-            </TouchableOpacity>
+            <Text style={styles.projectSupportInfo}>
+              Bu projeye toplam {supporters.length} kayıtlı destek var.
+            </Text>
+            <View style={styles.donateRow}>
+              {[50, 100, 250].map((amount) => (
+                <TouchableOpacity
+                  key={amount}
+                  style={[styles.donateButton, donationLoadingProject === proj.id && styles.donateButtonDisabled]}
+                  onPress={() => handleMockDonate(proj.id, amount)}
+                  disabled={donationLoadingProject === proj.id}
+                >
+                  <Text style={styles.donateButtonText}>{amount} TL</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <TouchableOpacity style={styles.voteButton} onPress={() => {/* TODO: Voting integration */}}>
               <Text style={styles.voteButtonText}>Oy Ver (Sıradaki Harita)</Text>
             </TouchableOpacity>
@@ -187,34 +249,46 @@ export default function LocationsScreen() {
             <View style={styles.supportersBox}>
                 <Text style={styles.supportersTitle}>En Büyük Destekçilerimiz (Top 3)</Text>
                 <View style={styles.supportersList}>
-                  {topSupporters.length === 0 ? (
+                  {supporters.length === 0 ? (
                     <Text style={styles.supporterItem}>Henüz destekçi yok.</Text>
                   ) : (
-                    topSupporters.map((sup, idx) => (
-                      <View key={sup.user_id} style={styles.supporterRow}>
+                    supporters.map((sup) => (
+                      <View key={`${proj.id}-${sup.user_id}`} style={styles.supporterRow}>
                         {sup.avatar_url ? (
                           <Image source={{ uri: sup.avatar_url }} style={styles.supporterAvatar} />
                         ) : null}
-                        <Text style={styles.supporterName}>{sup.nickname}</Text>
-                        <Text style={styles.supporterAmount}>{sup.amount} TL</Text>
-                        <TouchableOpacity style={styles.likeButton} onPress={async () => {
-                          try {
-                            const { likeSupporter } = await import('@/lib/supporterLogic');
-                            await likeSupporter(sup.user_id);
-                          } catch (e) {
-                            setErrorMsg('Like işlemi başarısız: ' + e.message);
-                          }
-                        }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.supporterName}>{sup.nickname ?? 'Anonim Destekçi'}</Text>
+                          <Text style={styles.supporterAmount}>{sup.amount} TL</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.likeButton}
+                          onPress={async () => {
+                            try {
+                              if (!userId) throw new Error('Önce giriş yapın.');
+                              const { likeSupporter } = await import('@/lib/supporterLogic');
+                              await likeSupporter(sup.user_id, userId);
+                              setSupporterMsg('Destekçiye like gönderdiniz.');
+                            } catch (e: any) {
+                              setErrorMsg('Like işlemi başarısız: ' + (e?.message || 'Bilinmeyen hata'));
+                            }
+                          }}
+                        >
                           <Text style={styles.likeText}>👍</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.dislikeButton} onPress={async () => {
-                          try {
-                            const { dislikeSupporter } = await import('@/lib/supporterLogic');
-                            await dislikeSupporter(sup.user_id);
-                          } catch (e) {
-                            setErrorMsg('Dislike işlemi başarısız: ' + e.message);
-                          }
-                        }}>
+                        <TouchableOpacity
+                          style={styles.dislikeButton}
+                          onPress={async () => {
+                            try {
+                              if (!userId) throw new Error('Önce giriş yapın.');
+                              const { dislikeSupporter } = await import('@/lib/supporterLogic');
+                              await dislikeSupporter(sup.user_id, userId);
+                              setSupporterMsg('Geri bildirim gönderildi.');
+                            } catch (e: any) {
+                              setErrorMsg('Dislike işlemi başarısız: ' + (e?.message || 'Bilinmeyen hata'));
+                            }
+                          }}
+                        >
                           <Text style={styles.dislikeText}>👎</Text>
                         </TouchableOpacity>
                       </View>
@@ -225,7 +299,10 @@ export default function LocationsScreen() {
                 <Text style={styles.supportersInfo}>Bu projeye en çok destek veren 3 kişi özel rozet kazanır.</Text>
             </View>
           </View>
-        ))}
+          );
+        })}
+        {supporterMsg ? <Text style={styles.supportSuccess}>{supporterMsg}</Text> : null}
+        <ErrorMessage message={errorMsg} />
         {/* Genel Proje Destekçileri */}
         <View style={styles.globalSupportersBox}>
           <Text style={styles.globalSupportersTitle}>Genel Proje Destekçileri</Text>
@@ -272,167 +349,6 @@ export default function LocationsScreen() {
 }
 
 const styles = StyleSheet.create({
-        globalSupportersBox: {
-          backgroundColor: '#23272e',
-          padding: 16,
-          borderRadius: 12,
-          marginTop: 24,
-          borderWidth: 1,
-          borderColor: '#3a3d42',
-        },
-        globalSupportersTitle: {
-          color: '#00d4ff',
-          fontWeight: '700',
-          fontSize: 17,
-          marginBottom: 6,
-          textAlign: 'center',
-        },
-        globalSupportersDesc: {
-          color: '#ffddaa',
-          fontSize: 15,
-          marginBottom: 10,
-          lineHeight: 20,
-          fontWeight: '600',
-          textAlign: 'center',
-        },
-        globalSupportersList: {
-          marginBottom: 8,
-        },
-        globalSupporterRow: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          marginBottom: 4,
-          justifyContent: 'space-between',
-        },
-        globalSupporterRank: {
-          color: '#fff',
-          fontWeight: '700',
-          fontSize: 15,
-          width: 22,
-        },
-        globalSupporterName: {
-          color: '#fff',
-          fontSize: 15,
-          flex: 1,
-        },
-        globalSupporterAmount: {
-          color: '#00d4ff',
-          fontWeight: '700',
-          fontSize: 15,
-          marginLeft: 8,
-          width: 90,
-          textAlign: 'right',
-        },
-        globalSupporterBadge: {
-          fontSize: 18,
-          marginLeft: 8,
-        },
-        globalSupportersNote: {
-          color: '#b0b3b8',
-          fontSize: 13,
-          marginTop: 10,
-          fontStyle: 'italic',
-          textAlign: 'center',
-        },
-        globalSupportersLikeInfo: {
-          color: '#b0b3b8',
-          fontSize: 13,
-          marginTop: 4,
-          textAlign: 'center',
-        },
-      supportersBox: {
-        backgroundColor: '#23272e',
-        padding: 10,
-        borderRadius: 8,
-        marginTop: 10,
-        borderWidth: 1,
-        borderColor: '#3a3d42',
-      },
-      supportersTitle: {
-        color: '#00d4ff',
-        fontWeight: '700',
-        fontSize: 15,
-        marginBottom: 6,
-      },
-      supportersList: {
-        marginBottom: 6,
-      },
-      supporterItem: {
-        color: '#fff',
-        fontSize: 14,
-        marginBottom: 2,
-      },
-      supportersInfo: {
-        color: '#b0b3b8',
-        fontSize: 12,
-        fontStyle: 'italic',
-        marginTop: 4,
-      },
-    supportSection: {
-      backgroundColor: '#23272e',
-      padding: 16,
-      borderRadius: 12,
-      marginTop: 24,
-      borderWidth: 1,
-      borderColor: '#3a3d42',
-    },
-    supportDesc: {
-      color: '#ffddaa',
-      fontSize: 15,
-      marginBottom: 12,
-      lineHeight: 20,
-      fontWeight: '600',
-    },
-    projectCard: {
-      backgroundColor: '#2a2d32',
-      padding: 14,
-      borderRadius: 10,
-      marginTop: 14,
-      borderWidth: 1,
-      borderColor: '#3a3d42',
-    },
-    projectTitle: {
-      color: '#fff',
-      fontSize: 16,
-      fontWeight: '700',
-      marginBottom: 4,
-    },
-    projectSupportInfo: {
-      color: '#b0b3b8',
-      fontSize: 13,
-      marginBottom: 8,
-    },
-    donateButton: {
-      backgroundColor: '#00d4ff',
-      padding: 10,
-      borderRadius: 8,
-      alignItems: 'center',
-      marginBottom: 8,
-    },
-    donateButtonText: {
-      color: '#23272e',
-      fontWeight: '700',
-      fontSize: 15,
-    },
-    voteButton: {
-      backgroundColor: '#ffddaa',
-      padding: 8,
-      borderRadius: 8,
-      alignItems: 'center',
-      marginBottom: 4,
-    },
-    voteButtonText: {
-      color: '#23272e',
-      fontWeight: '700',
-      fontSize: 14,
-    },
-    supportNote: {
-      color: '#b0b3b8',
-      fontSize: 13,
-      marginTop: 14,
-      fontStyle: 'italic',
-      textAlign: 'center',
-    },
   container: {
     flex: 1,
     backgroundColor: '#1a1d22',
@@ -523,21 +439,241 @@ const styles = StyleSheet.create({
   stageButtonTextDisabled: {
     color: '#888',
   },
-  section: {
-    marginVertical: 16,
-    padding: 8,
-    backgroundColor: '#f8f8f8',
-    borderRadius: 8,
+  supportSection: {
+    backgroundColor: '#23272e',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 24,
+    borderWidth: 1,
+    borderColor: '#3a3d42',
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 8,
   },
+  supportDesc: {
+    color: '#ffddaa',
+    fontSize: 15,
+    marginBottom: 12,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  projectCard: {
+    backgroundColor: '#2a2d32',
+    padding: 14,
+    borderRadius: 10,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: '#3a3d42',
+  },
+  projectTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  projectSupportInfo: {
+    color: '#b0b3b8',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  donateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    marginBottom: 8,
+    gap: 8,
+  },
+  donateButton: {
+    flex: 1,
+    backgroundColor: '#ff784f',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  donateButtonDisabled: {
+    opacity: 0.5,
+  },
+  donateButtonText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  voteButton: {
+    backgroundColor: '#00d4ff',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  voteButtonText: {
+    color: '#1a1d22',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  supportersBox: {
+    backgroundColor: '#23272e',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#3a3d42',
+  },
+  supportersTitle: {
+    color: '#00d4ff',
+    fontWeight: '700',
+    fontSize: 15,
+    marginBottom: 6,
+  },
+  supportersList: {
+    marginBottom: 6,
+  },
+  supporterItem: {
+    color: '#fff',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  supporterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 10,
+  },
+  supporterAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 4,
+  },
+  supporterName: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  supporterAmount: {
+    color: '#00d4ff',
+    fontWeight: '700',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  likeButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#2f343d',
+  },
+  likeText: {
+    fontSize: 18,
+  },
+  dislikeButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#2f343d',
+    marginLeft: 6,
+  },
+  dislikeText: {
+    fontSize: 18,
+  },
+  supportersInfo: {
+    color: '#b0b3b8',
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  supportSuccess: {
+    color: '#3fe478',
+    marginTop: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  supportNote: {
+    color: '#b0b3b8',
+    fontSize: 13,
+    marginTop: 14,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  globalSupportersBox: {
+    backgroundColor: '#23272e',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 24,
+    borderWidth: 1,
+    borderColor: '#3a3d42',
+  },
+  globalSupportersTitle: {
+    color: '#00d4ff',
+    fontWeight: '700',
+    fontSize: 17,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  globalSupportersDesc: {
+    color: '#ffddaa',
+    fontSize: 15,
+    marginBottom: 10,
+    lineHeight: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  globalSupportersList: {
+    marginBottom: 8,
+  },
+  globalSupporterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    justifyContent: 'space-between',
+  },
+  globalSupporterRank: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+    width: 22,
+  },
+  globalSupporterName: {
+    color: '#fff',
+    fontSize: 15,
+    flex: 1,
+  },
+  globalSupporterAmount: {
+    color: '#00d4ff',
+    fontWeight: '700',
+    fontSize: 15,
+    marginLeft: 8,
+    width: 90,
+    textAlign: 'right',
+  },
+  globalSupporterBadge: {
+    fontSize: 18,
+    marginLeft: 8,
+  },
+  globalSupportersNote: {
+    color: '#b0b3b8',
+    fontSize: 13,
+    marginTop: 10,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  globalSupportersLikeInfo: {
+    color: '#b0b3b8',
+    fontSize: 13,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  section: {
+    marginVertical: 16,
+    padding: 8,
+    backgroundColor: '#f8f8f8',
+    borderRadius: 8,
+  },
   inlineButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   smallButton: {
     backgroundColor: '#00d4ff',
@@ -546,7 +682,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     flex: 1,
     alignItems: 'center',
-    marginRight: 8,
   },
   smallButtonText: {
     color: '#1a1d22',

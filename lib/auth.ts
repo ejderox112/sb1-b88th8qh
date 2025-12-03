@@ -1,64 +1,47 @@
 import { supabase } from './supabase';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 export class AuthService {
   async signInWithGoogle() {
     try {
-      // Check if Supabase is properly configured
-      if (!process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
-        // Return mock user data for demo purposes
-        return {
-          data: {
-            user: {
-              id: 'demo-user-123',
-              email: 'demo@example.com',
-              user_metadata: {
-                full_name: 'Demo User',
-              },
-            },
-          },
-          error: null,
-        };
+      // Determine configuration from Expo constants OR environment
+      const extra = Constants.expoConfig?.extra || {};
+      const supabaseConfigured = !!(
+        extra.EXPO_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL
+      ) && !!(
+        extra.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+      );
+
+      if (!supabaseConfigured) {
+        throw new Error('Supabase not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in app config.');
       }
 
-      // Web platformu için basit email/password girişi
-      if (Platform.OS === 'web') {
+      // For now, we provide a simple email/password sign-in using demo credentials
+      // only if they are present in app config. Otherwise the caller should invoke
+      // a proper OAuth flow (not handled here).
+      const demoEmail = extra.EXPO_PUBLIC_DEMO_EMAIL || process.env.EXPO_PUBLIC_DEMO_EMAIL;
+      const demoPassword = extra.EXPO_PUBLIC_DEMO_PASSWORD || process.env.EXPO_PUBLIC_DEMO_PASSWORD;
+
+      if (demoEmail && demoPassword) {
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: 'test@example.com',
-          password: 'test123456',
+          email: demoEmail,
+          password: demoPassword,
         });
-        
+
         if (error) {
-          // Kullanıcı yoksa oluştur
+          // Try sign up if not exists
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: 'test@example.com',
-            password: 'test123456',
+            email: demoEmail,
+            password: demoPassword,
           });
-          
           if (signUpError) throw signUpError;
           return signUpData;
         }
-        
-        return data;
-      } else {
-        // Native platformlar için Google OAuth (şimdilik basit giriş)
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: 'test@example.com',
-          password: 'test123456',
-        });
-        
-        if (error) {
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: 'test@example.com',
-            password: 'test123456',
-          });
-          
-          if (signUpError) throw signUpError;
-          return signUpData;
-        }
-        
         return data;
       }
+
+      throw new Error('No demo credentials provided; implement OAuth sign-in flow for Google.');
     } catch (error) {
       console.error('Giriş hatası:', error);
       throw error;
@@ -72,15 +55,16 @@ export class AuthService {
 
   async getCurrentUser() {
     try {
-      if (!process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
-        // Return mock user for demo
-        return {
-          id: 'demo-user-123',
-          email: 'demo@example.com',
-          user_metadata: {
-            full_name: 'Demo User',
-          },
-        };
+      const extra = Constants.expoConfig?.extra || {};
+      const supabaseConfigured = !!(
+        extra.EXPO_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL
+      ) && !!(
+        extra.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+      );
+
+      if (!supabaseConfigured) {
+        console.warn('getCurrentUser: Supabase not configured');
+        return null;
       }
 
       const { data: { user }, error } = await supabase.auth.getUser();

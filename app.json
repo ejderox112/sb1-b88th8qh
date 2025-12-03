@@ -2,18 +2,17 @@
   "expo": {
     "name": "bolt-expo-nativewind",
     "slug": "bolt-expo-nativewind",
+    "owner": "ejderox112",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "extra": {
-      "EXPO_PUBLIC_SUPABASE_URL": "https://cwbwxidnarckltxtxtkf.supabase.co",
-      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3Ynd4aWRuYXJja2x4dHN4dGtmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQyNTMyMjcsImV4cCI6MjA2OTgyOTIyN30.a7xd71y4hKl7rPWjXh9zaT3OP5CnP_Ago0ouKi9iYEE",
       "EXPO_PUBLIC_ADMIN_OVERRIDE_EMAILS": "",
       "EXPO_PUBLIC_FORCE_ADMIN": "false",
-      "EXPO_PUBLIC_DEMO_EMAIL": "test@example.com",
-      "EXPO_PUBLIC_DEMO_PASSWORD": "test123456"
+      "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1033668982412-rper29qh08sc2gievscljuiikpmhuc4k.apps.googleusercontent.com",
+      "EXPO_PUBLIC_DEMO_EMAIL": "test@example.com"
     },
     "ios": {
       "supportsTablet": true
@@ -35,7 +34,7 @@
       "permissions": [
         "android.permission.CAMERA"
       ],
-      "package": "com.anonymous.boltexponativewind"
+      "package": "com.ejderox112.bolt_expo_nativewind"
     }
   }
 }

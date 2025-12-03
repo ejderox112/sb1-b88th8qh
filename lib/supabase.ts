@@ -2,19 +2,26 @@ import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import Constants from 'expo-constants';
 
-// Expo Constants üzerinden env değişkenlerini oku
-const supabaseUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_URL || 
-                    process.env.EXPO_PUBLIC_SUPABASE_URL || 
-                    '';
-const supabaseAnonKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
-                        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
-                        '';
+const extra = (Constants?.expoConfig?.extra ?? (Constants as any)?.manifestExtra ?? {}) as Record<string, any>;
+
+// Expo Constants veya derleme zamanlı env değişkenleri üzerinden Supabase yapılandırmasını oku
+const supabaseUrl =
+  extra.EXPO_PUBLIC_SUPABASE_URL ||
+  process.env.EXPO_PUBLIC_SUPABASE_URL ||
+  '';
+
+const supabaseAnonKey =
+  extra.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  '';
+
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 console.log('Supabase URL:', supabaseUrl ? 'Configured' : 'Missing');
 console.log('Supabase Key:', supabaseAnonKey ? 'Configured' : 'Missing');
 
 // Create a mock client if credentials are not available
-export const supabase = supabaseUrl && supabaseAnonKey 
+export const supabase = isSupabaseConfigured 
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         autoRefreshToken: true,

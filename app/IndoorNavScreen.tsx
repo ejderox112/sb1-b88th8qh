@@ -1,15 +1,18 @@
 import { useMemo, useState, useEffect } from 'react';
 import * as Google from 'expo-auth-session/providers/google';
+import { makeRedirectUri } from 'expo-auth-session';
+import { Platform } from 'react-native';
 import IndoorChatScreen from './IndoorChatScreen';
 import AddFriendScreen from './AddFriendScreen';
 import { TextInput } from 'react-native';
 import { supabase } from '@/lib/supabase';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView } from 'react-native';
 import { findRoute } from '@/lib/indoor/pathfinder';
 import { getNearbyDoorSigns } from '@/lib/indoor/signage';
 import { getActiveVenue, getDoorSigns } from '@/lib/indoor/store';
 
 export default function IndoorNavScreen() {
+  const isDev = process.env.NODE_ENV !== 'production';
   // Profil ekleme formu için state
   const [profileName, setProfileName] = useState('');
   const [profileNick, setProfileNick] = useState('');
@@ -17,21 +20,104 @@ export default function IndoorNavScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  });
+  let request: any = null;
+  let response: any = null;
+  let promptAsync: any = async () => setErrorMsg('Google login not configured');
+
+  const hasAndroidClient = !!process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+  const hasExpoClient = !!process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID;
+
+  try {
+    // Wrap the hook call so a missing platform client id doesn't crash the whole screen.
+    // Build a redirect URI that is explicit for web to match Google Console entries.
+    // For web we want the exact `/--/expo-auth-session` path so expo-auth-session
+    // can catch the token/code. For native (or when using the Expo proxy) use
+    // the proxy redirect which uses auth.expo.io.
+    const webRedirectUri = (typeof window !== 'undefined' && window.location && window.location.origin)
+      ? `${window.location.origin}/--/expo-auth-session`
+      : undefined;
+
+    const tuple = Google.useAuthRequest({
+      expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
+      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      // Ensure we request an id_token on web so we can pass it to Supabase
+      // and use the expo-auth-session catch at `/--/expo-auth-session`.
+      responseType: 'id_token',
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri: Platform.OS === 'web' && webRedirectUri ? webRedirectUri : makeRedirectUri({ useProxy: true }),
+    });
+    request = tuple[0];
+    response = tuple[1];
+    promptAsync = tuple[2];
+  } catch (e: any) {
+    // If expo-auth-session throws because a required client id is missing, fall back
+    // to a no-op prompt that surfaces a helpful message for the developer/user.
+    // This prevents the app from crashing when environment vars are not provided.
+    // Keep values defined so the rest of the component can render.
+    request = null;
+    response = null;
+    promptAsync = async () => setErrorMsg(
+      Platform.OS === 'android' && !hasAndroidClient
+        ? 'Android Google client id not configured (EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID)'
+        : 'Google login not configured'
+    );
+    console.warn('Google.useAuthRequest failed to initialize:', e?.message || e);
+  }
 
   // Kullanıcı login kontrolü
   useEffect(() => {
     const checkUser = async () => {
-      const user = await supabase.auth.getUser();
-      setIsLoggedIn(!!user?.data?.user?.id);
+      const { data } = await supabase.auth.getUser();
+      if (isDev) {
+        console.log('[IndoorNavScreen] Initial user check:', data?.user?.id);
+      }
+      setIsLoggedIn(!!data?.user?.id);
     };
     checkUser();
+
+    // Auth durumunu dinle
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (isDev) {
+        console.log('[IndoorNavScreen] Auth state changed:', event, session?.user?.id);
+      }
+      setIsLoggedIn(!!session?.user);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  // Log auth request/response to the browser console for debugging
+  useEffect(() => {
+    if (!isDev) return;
+    try {
+      console.log('[IndoorNavScreen] Google auth request object:', request);
+      console.log('[IndoorNavScreen] Google auth response object:', response);
+    } catch (e) {
+      console.warn('[IndoorNavScreen] Failed to log Google auth objects', e);
+    }
+  }, [isDev, request, response]);
+
+  // Log the redirect URI used by expo-auth-session so we can verify it in Google Console
+  useEffect(() => {
+    if (!isDev) return;
+    try {
+      const uri = makeRedirectUri({ useProxy: false });
+      console.log('[IndoorNavScreen] Auth redirect URI (makeRedirectUri):', uri);
+    } catch (e) {
+      console.warn('[IndoorNavScreen] Failed to compute redirect URI', e);
+    }
+  }, [isDev]);
+
+  // Web fallback: If expo-auth-session did not populate `response` (e.g. static export 404
+  // on /--/expo-auth-session without SPA fallback), manually parse hash for id_token.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    // Fallback logic removed to avoid conflict with _layout.tsx which handles popup closing
+  }, [response]);
 
   useEffect(() => {
     if (response?.type === 'success') {
@@ -268,42 +354,80 @@ export default function IndoorNavScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       <Text style={styles.title}>İç Mekan Navigasyon</Text>
 
-      {/* Mevcut kullanıcı girişi */}
-      <View style={styles.profileBox}>
-        <Text style={styles.sectionHeader}>Mevcut Kullanıcı/Admin Girişi</Text>
-        <TouchableOpacity style={styles.primary} onPress={() => promptAsync()}>
-          <Text style={styles.primaryText}>Google ile Giriş Yap</Text>
-        </TouchableOpacity>
-        <Text style={{ color: '#888', marginTop: 6, fontSize: 13 }}>
-          Zaten hesabınız veya admin yetkiniz varsa, buradan giriş yapabilirsiniz.
-        </Text>
-        {errorMsg ? <Text style={{ color: 'red', marginTop: 8 }}>{errorMsg}</Text> : null}
-        {infoMsg ? <Text style={{ color: 'green', marginTop: 8 }}>{infoMsg}</Text> : null}
-      </View>
+      {isLoggedIn ? (
+        <View style={styles.profileBox}>
+          <Text style={styles.sectionHeader}>Hoşgeldiniz</Text>
+          <Text style={{ marginBottom: 12 }}>Başarıyla giriş yaptınız.</Text>
+          <TouchableOpacity 
+            style={[styles.primary, { backgroundColor: '#dc3545' }]} 
+            onPress={async () => {
+              await supabase.auth.signOut();
+              setIsLoggedIn(false);
+            }}
+          >
+            <Text style={styles.primaryText}>Çıkış Yap</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          {/* Mevcut kullanıcı girişi */}
+          <View style={styles.profileBox}>
+            <Text style={styles.sectionHeader}>Mevcut Kullanıcı/Admin Girişi</Text>
+            <TouchableOpacity
+              style={[styles.primary, (!hasAndroidClient && Platform.OS === 'android') ? { backgroundColor: '#9aa4b2' } : null]}
+              onPress={() => {
+                try {
+                  const promise = promptAsync();
+                  promise.catch(e => {
+                    console.error('Google login popup failed', e);
+                    setErrorMsg('Google girişi için pencere açılamadı. Lütfen açılır pencere engelleyicisini kapatıp tekrar deneyin.');
+                  });
+                } catch (e) {
+                  console.error('Google login handler crashed', e);
+                  setErrorMsg('Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.');
+                }
+              }}
+              disabled={!hasAndroidClient && Platform.OS === 'android'}
+            >
+              <Text style={styles.primaryText}>Google ile Giriş Yap</Text>
+            </TouchableOpacity>
+            {(!hasAndroidClient && Platform.OS === 'android') ? (
+              <Text style={{ color: '#d00', marginTop: 8, fontSize: 13 }}>
+                Android için `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` yapılandırılmamış — Google Girişi devre dışı.
+              </Text>
+            ) : null}
+            <Text style={{ color: '#888', marginTop: 6, fontSize: 13 }}>
+              Zaten hesabınız veya admin yetkiniz varsa, buradan giriş yapabilirsiniz.
+            </Text>
+            {errorMsg ? <Text style={{ color: 'red', marginTop: 8 }}>{errorMsg}</Text> : null}
+            {infoMsg ? <Text style={{ color: 'green', marginTop: 8 }}>{infoMsg}</Text> : null}
+          </View>
 
-      {/* Yeni kullanıcı ekleme formu */}
-      <View style={styles.profileBox}>
-        <Text style={styles.sectionHeader}>Yeni Kullanıcı Oluştur</Text>
-        <TextInput
-          style={styles.input}
-          value={profileName}
-          onChangeText={setProfileName}
-          placeholder="İsim"
-        />
-        <TextInput
-          style={styles.input}
-          value={profileNick}
-          onChangeText={setProfileNick}
-          placeholder="Nick"
-        />
-        <TouchableOpacity style={styles.primary} onPress={addProfile}>
-          <Text style={styles.primaryText}>Profil Ekle</Text>
-        </TouchableOpacity>
-        {profileInfo ? <Text style={styles.info}>{profileInfo}</Text> : null}
-      </View>
+          {/* Yeni kullanıcı ekleme formu */}
+          <View style={styles.profileBox}>
+            <Text style={styles.sectionHeader}>Yeni Kullanıcı Oluştur</Text>
+            <TextInput
+              style={styles.input}
+              value={profileName}
+              onChangeText={setProfileName}
+              placeholder="İsim"
+            />
+            <TextInput
+              style={styles.input}
+              value={profileNick}
+              onChangeText={setProfileNick}
+              placeholder="Nick"
+            />
+            <TouchableOpacity style={styles.primary} onPress={addProfile}>
+              <Text style={styles.primaryText}>Profil Ekle</Text>
+            </TouchableOpacity>
+            {profileInfo ? <Text style={styles.info}>{profileInfo}</Text> : null}
+          </View>
+        </>
+      )}
 
       {/* Sohbet ve Arkadaş Ekle bölümleri */}
       <View style={styles.sectionBox}>
@@ -326,7 +450,7 @@ export default function IndoorNavScreen() {
           </Text>
         )}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 

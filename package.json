@@ -10,7 +10,8 @@
     "lint": "expo lint",
     "test": "echo \"No tests specified\" && exit 0",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "supabase:migrate": "supabase db push"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -20,6 +21,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.4.1",
     "@react-native-community/slider": "5.0.1",
+    "@react-native-google-signin/google-signin": "^16.0.0",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.14",
     "@react-three/drei": "^10.7.6",
