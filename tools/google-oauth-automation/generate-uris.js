@@ -1,0 +1,43 @@
+#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
+
+const data = {
+  javascript_origins: [
+    'https://auth.expo.io',
+    'http://localhost:8082',
+    'http://127.0.0.1:8082',
+    'http://localhost:19006',
+    'http://127.0.0.1:3000',
+    'http://localhost:3000',
+    'http://localhost:8081',
+    'http://127.0.0.1:8081'
+  ],
+  redirect_uris: [
+    'https://auth.expo.io/@ejderhaox112/bolt-expo-nativewind',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000/--/expo-auth-session',
+    'http://localhost:3000/--/expo-auth-session',
+    'http://localhost:8081/--/expo-auth-session',
+    'http://127.0.0.1:8081/--/expo-auth-session',
+    'http://localhost:8082/--/expo-auth-session',
+    'http://127.0.0.1:8082/--/expo-auth-session',
+    'http://127.0.0.1:3000',
+    'https://communalistic-overcoolly-tiffiny.ngrok-free.dev',
+    'https://communalistic-overcoolly-tiffiny.ngrok-free.dev/oauth/callback',
+    'http://127.0.0.1:4041'
+  ]
+};
+
+const out = {
+  description: 'Use this payload to update your OAuth Web client (manually or via automation).\nReview before applying.\n',
+  payload: data,
+  curl_template: {
+    note: 'There is no single public REST endpoint that universally edits OAuth client redirect_uris; this template is a starting point if you have an API endpoint in your org that allows patching an OAuth client. Otherwise, update via Google Cloud Console or gcloud CLI.',
+    template: "# Replace CLIENT_ID and PROJECT_NUMBER where applicable\n# Example (pseudo):\n# curl -X PATCH 'https://www.googleapis.com/some/service/v1/projects/PROJECT_NUMBER/clients/CLIENT_ID' -H 'Authorization: Bearer $(gcloud auth print-access-token)' -H 'Content-Type: application/json' -d '@payload.json'"
+  }
+};
+
+const outPath = path.join(__dirname, 'google-oauth-payload.json');
+fs.writeFileSync(outPath, JSON.stringify(out, null, 2), 'utf8');
+console.log('Wrote', outPath);
