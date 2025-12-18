@@ -56,3 +56,7 @@ yarn-error.*
 target/
 **/target/
 *.class
+.maven/
+*-dependency-updates.txt
+*-dependencies.txt
+npm-audit.json
