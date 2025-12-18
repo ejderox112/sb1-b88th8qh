@@ -61,43 +61,42 @@ export default function MapTabScreen() {
   }, []);
 
   // GPS Tracking
-  useEffect(() => {
-    let locationSub: Location.LocationSubscription | null = null;
-    let headingSub: Location.LocationSubscription | null = null;
+    useEffect(() => {
+      if (Platform.OS === 'web') return;
+      let locationSub: Location.LocationSubscription | null = null;
+      let headingSub: Location.LocationSubscription | null = null;
 
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Konum İzni', 'Navigasyon için konum iznine ihtiyacımız var.');
-        return;
-      }
-
-      // Location updates
-      locationSub = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 1000,
-          distanceInterval: 1,
-        },
-        (loc) => {
-          setLocation(loc);
-          checkIndoorPosition(loc);
+      (async () => {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Konum İzni', 'Navigasyon için konum iznine ihtiyacımız var.');
+          return;
         }
-      );
 
-      // Heading updates
-      if (Platform.OS !== 'web') {
+        // Location updates
+        locationSub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 1000,
+            distanceInterval: 1,
+          },
+          (loc) => {
+            setLocation(loc);
+            checkIndoorPosition(loc);
+          }
+        );
+
+        // Heading updates
         headingSub = await Location.watchHeadingAsync((h) => {
           setHeading(h.trueHeading ?? h.magHeading);
         });
-      }
-    })();
+      })();
 
-    return () => {
-      locationSub?.remove();
-      headingSub?.remove();
-    };
-  }, []);
+      return () => {
+        locationSub?.remove();
+        headingSub?.remove();
+      };
+    }, []);
 
   // Check if user is inside venue and map to nearest node
   const checkIndoorPosition = (loc: Location.LocationObject) => {
@@ -151,12 +150,15 @@ export default function MapTabScreen() {
       metadata: { venue_id: venue?.id ?? null },
       updated_at: new Date().toISOString(),
     } as const;
-    supabase
-      .from('live_locations')
-      .upsert(payload, { onConflict: 'user_id' })
-      .catch(err => {
+    (async () => {
+      try {
+        await supabase
+          .from('live_locations')
+          .upsert(payload, { onConflict: 'user_id' });
+      } catch (err) {
         console.warn('Live location publish failed', err?.message || err);
-      });
+      }
+    })();
   }, [sessionUser?.id, location?.coords?.latitude, location?.coords?.longitude, settings.locationSharing, settings.nearbyVisibility, venue?.id]);
 
   const toggleNearbyVisibility = async () => {
@@ -367,9 +369,23 @@ export default function MapTabScreen() {
 
       {/* Main content */}
       <ScrollView style={styles.content}>
-        {/* Live Map */}
+        {/* Live Map - 3D Corridor View when indoor */}
         <View style={[styles.section, styles.mapSection]}>
-          <LiveMapView />
+          {isIndoor && currentNode && Platform.OS === 'web' ? (
+            <View style={styles.corridor3DContainer}>
+              <Text style={styles.sectionTitle}>🎮 3D İç Mekan Görünümü</Text>
+              <Corridor3DWrapper
+                currentNodeId={currentNode.id}
+                heading={heading}
+                venue={venue}
+              />
+              <Text style={styles.corridor3DHint}>
+                🧭 Cihazınızı çevirin - 3D koridor gerçek zamanlı güncellenir
+              </Text>
+            </View>
+          ) : (
+            <LiveMapView />
+          )}
         </View>
 
         {/* Current position info */}
@@ -594,4 +610,18 @@ const styles = StyleSheet.create({
   legendLine: { width: 20, height: 4, borderRadius: 2, marginRight: 8 },
   legendText: { fontSize: 11, color: '#6c757d', marginRight: 12 },
   legendIcons: { fontSize: 11, color: '#6c757d', textAlign: 'center' },
+  corridor3DContainer: {
+    minHeight: 400,
+    backgroundColor: '#000',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginVertical: 12,
+  },
+  corridor3DHint: {
+    fontSize: 13,
+    color: '#888',
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
 });

@@ -4,6 +4,7 @@ import type { CorridorSettings, Door, Destination, Journey } from './types';
 import ControlPanel from './components/ControlPanel';
 import CorridorCanvas from './components/CorridorCanvas';
 import ChatBot from './components/ChatBot';
+import SupabaseSync from './components/SupabaseSync';
 import { stringToSeed, mulberry32 } from './utils/random';
 
 const generateThematicId = (random: () => number, part: number): string => {
@@ -119,6 +120,7 @@ const generateCorridorSettings = (id: string, destination: Destination | null, p
     lineColor,
     doors: doors.sort((a, b) => a.position - b.position),
   };
+        <SupabaseSync />
 };
 
 const App: React.FC = () => {

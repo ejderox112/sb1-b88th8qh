@@ -6,13 +6,220 @@ import IndoorChatScreen from './IndoorChatScreen';
 import AddFriendScreen from './AddFriendScreen';
 import { TextInput } from 'react-native';
 import { supabase } from '@/lib/supabase';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView, Alert } from 'react-native';
 import { findRoute } from '@/lib/indoor/pathfinder';
 import { getNearbyDoorSigns } from '@/lib/indoor/signage';
 import { getActiveVenue, getDoorSigns } from '@/lib/indoor/store';
+import { notifyFriendAccepted } from '@/lib/notifications';
+
+interface FriendRequest {
+  id: string;
+  requester_id: string;
+  created_at: string;
+  requester?: {
+    nickname: string;
+    email?: string;
+    user_code?: string;
+  };
+}
+
+function FriendRequestsSection() {
+  const [requests, setRequests] = useState<FriendRequest[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const fetchRequests = async () => {
+    const { data: me } = await supabase.auth.getUser();
+    if (!me?.user?.id) return;
+
+    const { data, error } = await supabase
+      .from('friend_requests')
+      .select(`
+        id,
+        requester_id,
+        created_at,
+        requester:user_profiles!requester_id(nickname, email, user_code)
+      `)
+      .eq('receiver_id', me.user.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('İstek yükleme hatası:', error);
+      setMessage('İstekler yüklenemedi');
+      return;
+    }
+
+    setRequests(data || []);
+  };
+
+  useEffect(() => {
+    fetchRequests();
+    
+    // Realtime dinleme - yeni istek geldiğinde otomatik güncelle
+    const channel = supabase
+      .channel('friend_requests_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'friend_requests',
+        },
+        () => {
+          fetchRequests();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const handleAccept = async (requestId: string, requesterId: string) => {
+    setLoading(true);
+    const { data: me } = await supabase.auth.getUser();
+    if (!me?.user?.id) {
+      setLoading(false);
+      return;
+    }
+
+    // İsteği kabul et
+    const { error: updateError } = await supabase
+      .from('friend_requests')
+      .update({ status: 'accepted' })
+      .eq('id', requestId);
+
+    if (updateError) {
+      setMessage('Kabul edilemedi: ' + updateError.message);
+      setLoading(false);
+      return;
+    }
+
+    // Friends tablosuna ekle (çift yönlü)
+    const { error: insertError } = await supabase.from('friends').insert([
+      { user_id: me.user.id, friend_id: requesterId },
+      { user_id: requesterId, friend_id: me.user.id },
+    ]);
+
+    if (insertError) {
+      setMessage('Arkadaş eklenemedi: ' + insertError.message);
+      setLoading(false);
+      return;
+    }
+
+    // Kabul edene bildirim gönder (id / user_id fallback)
+    const tryProfile = async (column: 'id' | 'user_id') => supabase
+      .from('user_profiles')
+      .select('nickname')
+      .eq(column, me.user.id)
+      .maybeSingle();
+    let myProfileRes = await tryProfile('id');
+    if (!myProfileRes.data) myProfileRes = await tryProfile('user_id');
+    const myProfile = myProfileRes.data;
+    
+    await notifyFriendAccepted(
+      requesterId,
+      myProfile?.nickname || 'Bir kullanıcı'
+    );
+
+    setMessage('✅ Arkadaşlık isteği kabul edildi!');
+    fetchRequests();
+    setLoading(false);
+  };
+
+  const handleReject = async (requestId: string) => {
+    setLoading(true);
+    
+    const { error } = await supabase
+      .from('friend_requests')
+      .update({ status: 'rejected' })
+      .eq('id', requestId);
+
+    if (error) {
+      setMessage('Reddedilemedi: ' + error.message);
+      setLoading(false);
+      return;
+    }
+
+    setMessage('❌ İstek reddedildi');
+    fetchRequests();
+    setLoading(false);
+  };
+
+  if (requests.length === 0) {
+    return (
+      <View style={styles.requestsEmpty}>
+        <Text style={styles.emptyText}>📭 Bekleyen arkadaşlık isteği yok</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.requestsContainer}>
+      <Text style={styles.requestsTitle}>
+        🔔 Arkadaşlık İstekleri ({requests.length})
+      </Text>
+      {message ? (
+        <Text style={[styles.requestMessage, message.includes('✅') ? styles.successMsg : styles.errorMsg]}>
+          {message}
+        </Text>
+      ) : null}
+      <FlatList
+        data={requests}
+        scrollEnabled={false}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => {
+          const requester = Array.isArray(item.requester) ? item.requester[0] : item.requester;
+          return (
+            <View style={styles.requestCard}>
+              <View style={styles.requestInfo}>
+                <Text style={styles.requestName}>
+                  {requester?.nickname || 'Kullanıcı'}
+                </Text>
+                {requester?.email && (
+                  <Text style={styles.requestEmail}>{requester.email}</Text>
+                )}
+                {requester?.user_code && (
+                  <Text style={styles.requestCode}>Kod: {requester.user_code}</Text>
+                )}
+                <Text style={styles.requestTime}>
+                  {new Date(item.created_at).toLocaleDateString('tr-TR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </View>
+              <View style={styles.requestActions}>
+                <TouchableOpacity
+                  style={[styles.requestBtn, styles.acceptBtn]}
+                  onPress={() => handleAccept(item.id, item.requester_id)}
+                  disabled={loading}
+                >
+                  <Text style={styles.acceptBtnText}>✓ Kabul Et</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.requestBtn, styles.rejectBtn]}
+                  onPress={() => handleReject(item.id)}
+                  disabled={loading}
+                >
+                  <Text style={styles.rejectBtnText}>✗ Reddet</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        }}
+      />
+    </View>
+  );
+}
 
 export default function IndoorNavScreen() {
-  const isDev = false; // Debug mesajlarını kapat
+  const isDev = true; // Debug mesajlarını aç (redirectUri ve auth request/logları konsola yazılacak)
   // Profil ekleme formu için state
   const [profileName, setProfileName] = useState('');
   const [profileNick, setProfileNick] = useState('');
@@ -20,12 +227,43 @@ export default function IndoorNavScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
+  const [profile, setProfile] = useState<any>(null);
   let request: any = null;
   let response: any = null;
   let promptAsync: any = async () => setErrorMsg('Google login not configured');
 
   const hasAndroidClient = !!process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
   const hasExpoClient = !!process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID;
+
+  // Profil bilgilerini Supabase'den çek (id ve user_id kolonlarına göre)
+  const fetchProfile = async () => {
+    const { data: me } = await supabase.auth.getUser();
+    const userId = me?.user?.id;
+    if (!userId) return;
+
+    const tryFetch = async (column: 'id' | 'user_id') => {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq(column, userId)
+        .maybeSingle();
+      return { data, error };
+    };
+
+    let res = await tryFetch('id');
+    if (!res.data) res = await tryFetch('user_id');
+
+    if (res.data) {
+      setProfile(res.data);
+      setIsLoggedIn(true);
+    } else if (res.error && res.error.code !== 'PGRST116') {
+      setErrorMsg('Profil yüklenemedi: ' + res.error.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchProfile();
+  }, []);
 
   try {
     // Wrap the hook call so a missing platform client id doesn't crash the whole screen.
@@ -37,20 +275,86 @@ export default function IndoorNavScreen() {
       ? `${window.location.origin}/--/expo-auth-session`
       : undefined;
 
+    // Use the hardcoded Expo auth proxy URL since makeRedirectUri ignores useProxy
+    // and returns exp:// URLs with underscores which Google rejects.
+    // This must match the redirect URI added to Google Console.
+    const projectSlug = 'bolt-expo-nativewind';
+    const forcedExpoProxyRedirect = `https://auth.expo.io/@ejderhaox112/${projectSlug}`;
+
+    const expoClientId = process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+    const androidClientId =
+      process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ||
+      process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+      process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID ||
+      'MISSING_ANDROID_CLIENT_ID';
+    const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || undefined;
+    const isWeb = Platform.OS === 'web';
+    // Revert to authorization code (PKCE) flow for web/native and force the
+    // Expo proxy redirect on web so behavior matches the previously working setup.
+    const responseTypeForPlatform = 'code';
     const tuple = Google.useAuthRequest({
-      expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
-      androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+      expoClientId,
+      androidClientId,
+      iosClientId,
       webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      // Ensure we request an id_token on web so we can pass it to Supabase
-      // and use the expo-auth-session catch at `/--/expo-auth-session`.
-      responseType: 'id_token',
+      // Use authorization code + PKCE flow to satisfy Google's security requirements
+      // Web'de Google token endpoint'ine tarayıcıdan code exchange yapmak CORS vb.
+      // sebeplerle sorun çıkarabildiği için web'de implicit (id_token) akışını tercih ediyoruz.
+      // Native/Expo Go'da ise PKCE + code akışı güvenli ve stabil.
+      responseType: responseTypeForPlatform,
       scopes: ['openid', 'profile', 'email'],
-      redirectUri: Platform.OS === 'web' && webRedirectUri ? webRedirectUri : makeRedirectUri({ useProxy: true }),
+      // Request offline access and force consent so Google shows the consent
+      // screen. Use PKCE for all platforms. For web we force the Expo proxy
+      // redirect so the auth flow matches the previous working setup.
+      extraParams: {
+        access_type: 'offline',
+        prompt: 'consent',
+        include_granted_scopes: 'true',
+      },
+      redirectUri: forcedExpoProxyRedirect,
+      usePKCE: true,
+      useProxy: true,
+      projectNameForProxy: projectSlug,
     });
     request = tuple[0];
     response = tuple[1];
     promptAsync = tuple[2];
+    try {
+      // Log the actual request object so we can see which redirectUri was attached
+      // to the outgoing OAuth request (helps diagnose why exp:// appears).
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] forcedExpoProxyRedirect=', forcedExpoProxyRedirect);
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] request object =', request);
+      // Some platforms attach redirectUri inside request.url or request.redirectUri
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] request.url =', request?.url);
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] request.redirectUri =', request?.redirectUri || request?.redirect_uri);
+    } catch (e) {
+      // ignore
+    }
+    try {
+      // Debug: print which client IDs and redirect URIs are being used so we can
+      // diagnose redirect_uri_mismatch / exp:// vs auth.expo.io issues.
+      // These logs are safe to leave temporarily during debugging.
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] Platform.OS =', Platform.OS);
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] expoClientId=', expoClientId);
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] androidClientId=', androidClientId);
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] iosClientId=', iosClientId);
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] webClientId=', process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] redirectUri (proxy)=', makeRedirectUri({ useProxy: true, projectNameForProxy: 'bolt-expo-nativewind' }));
+      // eslint-disable-next-line no-console
+      console.log('[AuthDebug] redirectUri (no proxy)=', makeRedirectUri({ useProxy: false }));
+    } catch (e) {
+      // ignore logging errors
+    }
   } catch (e: any) {
     // If expo-auth-session throws because a required client id is missing, fall back
     // to a no-op prompt that surfaces a helpful message for the developer/user.
@@ -121,17 +425,75 @@ export default function IndoorNavScreen() {
 
   useEffect(() => {
     if (response?.type === 'success') {
-      const { authentication } = response;
-      supabase.auth.signInWithIdToken({
-        provider: 'google',
-        token: authentication.idToken,
-      }).then(() => {
-        setIsLoggedIn(true);
-        setInfoMsg('Giriş başarılı!');
-        setErrorMsg('');
-      }).catch(e => {
-        setErrorMsg('Google ile giriş başarısız: ' + e.message);
-      });
+      const { authentication, params } = response as any;
+      (async () => {
+        try {
+          // If expo-auth-session returned an ID token (implicit flow), use it.
+          if (authentication?.idToken) {
+            await supabase.auth.signInWithIdToken({ provider: 'google', token: authentication.idToken });
+            setIsLoggedIn(true);
+            setInfoMsg('Giriş başarılı!');
+            setErrorMsg('');
+            await fetchProfile();
+            return;
+          }
+
+          // Otherwise, if we received an authorization code, exchange it for tokens.
+          const code = params?.code;
+          if (!code) {
+            setErrorMsg('Google auth: no id_token or code received');
+            return;
+          }
+
+          // Recompute client id and redirect (must match request)
+          const expoClientIdLocal = process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+          const webClientIdLocal = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+          const clientIdForExchange = Platform.OS === 'web'
+            ? (webClientIdLocal || expoClientIdLocal)
+            : expoClientIdLocal;
+          const projectSlug = 'bolt-expo-nativewind';
+          const redirectUriLocal = (Platform.OS === 'web' && typeof window !== 'undefined' && window.location && window.location.origin)
+            ? `${window.location.origin}/--/expo-auth-session`
+            : `https://auth.expo.io/@ejderhaox112/${projectSlug}`;
+
+          // code_verifier should be available on the request object created earlier
+          const codeVerifier = (request as any)?.codeVerifier || (request as any)?.code_verifier || '';
+
+          const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              grant_type: 'authorization_code',
+              code,
+              client_id: clientIdForExchange,
+              redirect_uri: redirectUriLocal,
+              code_verifier: codeVerifier,
+            } as any).toString(),
+          });
+
+          const tokenJson = await tokenRes.json();
+          if (!tokenRes.ok) {
+            console.error('Token exchange failed', tokenJson);
+            setErrorMsg('Token exchange failed: ' + (tokenJson.error_description || tokenJson.error || 'unknown'));
+            return;
+          }
+
+          const idToken = tokenJson.id_token || tokenJson.idToken;
+          if (!idToken) {
+            setErrorMsg('Token exchange did not return id_token');
+            return;
+          }
+
+          await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+          setIsLoggedIn(true);
+          setInfoMsg('Giriş başarılı!');
+          setErrorMsg('');
+          await fetchProfile();
+        } catch (e: any) {
+          console.error('Auth exchange error', e);
+          setErrorMsg('Google ile giriş başarısız: ' + (e.message || e));
+        }
+      })();
     }
   }, [response]);
 
@@ -359,13 +721,29 @@ export default function IndoorNavScreen() {
 
       {isLoggedIn ? (
         <View style={styles.profileBox}>
-          <Text style={styles.sectionHeader}>Hoşgeldiniz</Text>
-          <Text style={{ marginBottom: 12 }}>Başarıyla giriş yaptınız.</Text>
+          <Text style={styles.sectionHeader}>Hoşgeldiniz 👋</Text>
+          {profile ? (
+            <>
+              <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 4 }}>
+                {profile.nickname || profile.email || 'Kullanıcı'}
+              </Text>
+              <Text style={{ fontSize: 14, color: '#666', marginBottom: 12 }}>
+                📧 {profile.email || 'Email bulunamadı'}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                <Text style={{ fontSize: 13, color: '#007AFF' }}>⭐ Level {profile.level || 1}</Text>
+                <Text style={{ fontSize: 13, color: '#28a745' }}>🎯 {profile.xp || 0} XP</Text>
+              </View>
+            </>
+          ) : (
+            <Text style={{ marginBottom: 12 }}>Başarıyla giriş yaptınız.</Text>
+          )}
           <TouchableOpacity 
             style={[styles.primary, { backgroundColor: '#dc3545' }]} 
             onPress={async () => {
               await supabase.auth.signOut();
               setIsLoggedIn(false);
+              setProfile(null);
             }}
           >
             <Text style={styles.primaryText}>Çıkış Yap</Text>
@@ -440,6 +818,14 @@ export default function IndoorNavScreen() {
           </Text>
         )}
       </View>
+      
+      {/* Arkadaşlık İstekleri */}
+      {isLoggedIn && (
+        <View style={styles.sectionBox}>
+          <FriendRequestsSection />
+        </View>
+      )}
+      
       <View style={styles.sectionBox}>
         <Text style={styles.sectionHeader}>Arkadaş Ekle</Text>
         {isLoggedIn ? (
@@ -480,4 +866,103 @@ const styles = StyleSheet.create({
   signSponsored: { backgroundColor: '#fff9e6' },
   signText: { fontSize: 14 },
   empty: { fontSize: 12, color: '#999', fontStyle: 'italic' },
+  sectionBox: {
+    backgroundColor: '#f8f8f8',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  requestsContainer: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 8,
+  },
+  requestsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
+    color: '#007AFF',
+  },
+  requestsEmpty: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  requestCard: {
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF',
+  },
+  requestInfo: {
+    marginBottom: 10,
+  },
+  requestName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  requestEmail: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 2,
+  },
+  requestCode: {
+    fontSize: 12,
+    color: '#888',
+    marginBottom: 4,
+  },
+  requestTime: {
+    fontSize: 11,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  requestActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  requestBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  acceptBtn: {
+    backgroundColor: '#28a745',
+  },
+  acceptBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  rejectBtn: {
+    backgroundColor: '#dc3545',
+  },
+  rejectBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  requestMessage: {
+    fontSize: 13,
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 10,
+  },
+  successMsg: {
+    backgroundColor: '#d4edda',
+    color: '#155724',
+  },
+  errorMsg: {
+    backgroundColor: '#f8d7da',
+    color: '#721c24',
+  },
 });

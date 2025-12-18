@@ -9,9 +9,14 @@
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "extra": {
+      "EXPO_PUBLIC_SUPABASE_URL": "https://<YOUR_SUPABASE_PROJECT>.supabase.co",
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "<EXPO_PUBLIC_SUPABASE_ANON_KEY>",
       "EXPO_PUBLIC_ADMIN_OVERRIDE_EMAILS": "ejderha112@gmail.com",
       "EXPO_PUBLIC_FORCE_ADMIN": "false",
       "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1033668982412-rper29qh08sc2gievscljuiikpmhuc4k.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "1033668982412-rper29qh08sc2gievscljuiikpmhuc4k.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "1033668982412-rper29qh08sc2gievscljuiikpmhuc4k.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1033668982412-rper29qh08sc2gievscljuiikpmhuc4k.apps.googleusercontent.com",
       "EXPO_PUBLIC_DEMO_EMAIL": "test@example.com"
     },
     "ios": {

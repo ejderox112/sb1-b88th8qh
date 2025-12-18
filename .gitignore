@@ -1,4 +1,22 @@
-# dependencies
+node_modules/
+.env
+.env.local
+.env.*.local
+.expo/
+.expo-shared/
+android/
+ios/
+web-build/
+logs/
+*.log
+tmp_bundle_head.txt
+/.vscode/
+.DS_Store
+/*.keystore
+debug.keystore
+dist/
+build/
+uploads/# dependencies
 node_modules/
 
 # expo

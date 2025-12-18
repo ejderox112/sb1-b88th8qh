@@ -13,6 +13,8 @@ export default function ProfileEditScreen() {
   const [nickname, setNickname] = useState('');
   const [showGender, setShowGender] = useState(true);
   const [showAge, setShowAge] = useState(true);
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
 
   useEffect(() => {
     fetchProfile();
@@ -42,6 +44,8 @@ export default function ProfileEditScreen() {
       setNickname(data.nickname);
       setShowGender(data.show_gender);
       setShowAge(data.show_age);
+      setFullName(data.full_name || data.nickname || '');
+      setEmail(data.email || '');
     } catch (err) {
       console.error('fetchProfile catch:', err);
     }
@@ -97,6 +101,8 @@ export default function ProfileEditScreen() {
         nickname,
         show_gender: showGender,
         show_age: showAge,
+        full_name: fullName,
+        email: email,
       };
 
       await supabase
@@ -114,6 +120,12 @@ export default function ProfileEditScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>👤 Profil Düzenle</Text>
+
+      <Text>İsim Soyisim:</Text>
+      <TextInput value={fullName} onChangeText={setFullName} style={styles.input} />
+
+      <Text>Email:</Text>
+      <TextInput value={email} onChangeText={setEmail} style={styles.input} editable={false} />
 
       <Text>Nickname:</Text>
       <TextInput value={nickname} onChangeText={setNickname} style={styles.input} />

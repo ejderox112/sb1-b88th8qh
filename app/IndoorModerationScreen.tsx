@@ -1,9 +1,46 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import { supabase } from '@/lib/supabase';
 import { listSuggestions, approveSuggestion, rejectSuggestion } from '@/lib/indoor/store';
 
 export default function IndoorModerationScreen() {
+  const router = useRouter();
   const [items, setItems] = useState(() => listSuggestions('pending'));
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    checkAdminAccess();
+  }, []);
+
+  const checkAdminAccess = async () => {
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user?.email === 'ejderha112@gmail.com') {
+        setIsAdmin(true);
+      } else {
+        Alert.alert('Erişim Engellendi', 'Bu sayfaya sadece adminler erişebilir');
+        router.back();
+      }
+      setLoading(false);
+    } catch (error) {
+      setLoading(false);
+      router.back();
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <Text>Yetki kontrolü yapılıyor...</Text>
+      </View>
+    );
+  }
+
+  if (!isAdmin) {
+    return null;
+  }
 
   const refresh = () => setItems(listSuggestions('pending'));
 

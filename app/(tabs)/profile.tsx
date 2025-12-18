@@ -28,6 +28,11 @@ interface Profile {
   dominant_city?: string;
   dominant_city_hours?: number;
   city_visible?: boolean;
+  about_me?: string;
+  is_online?: boolean;
+  birth_date?: string;
+  hide_email?: boolean;
+  admin_username?: string;
 }
 
 interface Badge {
@@ -46,6 +51,36 @@ const pickFallbackAvatar = (gender?: string) => {
   if (normalized === 'erkek' || normalized === 'male') return DEFAULT_AVATARS.male;
   if (normalized === 'kadın' || normalized === 'kadin' || normalized === 'female') return DEFAULT_AVATARS.female;
   return DEFAULT_AVATARS.neutral;
+};
+
+const calculateAge = (birthDate: string): number => {
+  if (!birthDate) return 0;
+  const today = new Date();
+  const birth = new Date(birthDate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
+};
+
+// DD.MM.YYYY formatını YYYY-MM-DD'ye çevir
+const convertToISODate = (ddmmyyyy: string): string => {
+  if (!ddmmyyyy || ddmmyyyy.length !== 10) return '';
+  const parts = ddmmyyyy.split('.');
+  if (parts.length !== 3) return '';
+  const [day, month, year] = parts;
+  return `${year}-${month}-${day}`;
+};
+
+// YYYY-MM-DD formatını DD.MM.YYYY'ye çevir
+const convertToDisplayDate = (isoDate: string): string => {
+  if (!isoDate) return '';
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return '';
+  const [year, month, day] = parts;
+  return `${day}.${month}.${year}`;
 };
 
 export default function ProfileScreen() {
@@ -70,14 +105,23 @@ export default function ProfileScreen() {
   const [nicknameLocked, setNicknameLocked] = useState(false);
   const [photoCountToday, setPhotoCountToday] = useState<number | null>(null);
   const [photoCountLoading, setPhotoCountLoading] = useState(false);
+  const [aboutMe, setAboutMe] = useState('');
+  const [isOnline, setIsOnline] = useState(true);
+  const [birthDate, setBirthDate] = useState('');
+  const [genderInput, setGenderInput] = useState<'erkek' | 'kadın' | 'belirtmek istemiyorum' | ''>('');
+  const [nicknameError, setNicknameError] = useState('');
+  const [birthDateError, setBirthDateError] = useState('');
+  const [aboutMeError, setAboutMeError] = useState('');
+  const [hideEmail, setHideEmail] = useState(false);
+  const [availableFields, setAvailableFields] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetchProfile();
   }, []);
 
   useEffect(() => {
-    if (profile?.id && photoCaptureOptIn) {
-      fetchDailyPhotoCount(profile.id);
+    if (profile && photoCaptureOptIn) {
+      if (profile.id) fetchDailyPhotoCount(profile.id);
     }
   }, [profile?.id, photoCaptureOptIn]);
 
@@ -99,61 +143,135 @@ export default function ProfileScreen() {
         return;
       }
 
-      // Profil verisini çek
-      let { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      // Profil verisini çek (id, yoksa user_id ile dene)
+      let profileData: any = null;
+      const tryFetch = async (column: 'id' | 'user_id') => {
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq(column, user.id)
+          .maybeSingle();
+        if (error) return { data: null, error };
+        return { data: data ?? null, error: null };
+      };
 
-      if (error && error.code === 'PGRST116') {
-        // Profil yoksa oluştur
+      let first = await tryFetch('id');
+      if (first.data) profileData = first.data;
+      else {
+        let second = await tryFetch('user_id');
+        if (second.data) profileData = second.data;
+        else if (first.error && first.error.code !== 'PGRST116') {
+          console.error('Profil çekme hatası:', first.error);
+          setError('Profil yüklenirken hata oluştu.');
+        }
+      }
+
+      if (!profileData) {
         console.log('Profil bulunamadı, yeni oluşturuluyor...');
-        const newProfile = {
+        const baseProfile = {
           id: user.id,
           email: user.email,
           nickname: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Yeni Kullanıcı',
           avatar_url: user.user_metadata?.avatar_url || 'https://i.pravatar.cc/150?img=12',
           level: 1,
           xp: 0,
-          user_code: 'USER' + Math.floor(Math.random() * 10000),
-          location_sharing: true,
-          profile_visible: true,
-          indoor_nav_enabled: false
-        };
+        } as any;
 
-        const { data: createdProfile, error: createError } = await supabase
+        // Önce user_id ile dene, şema desteklemiyorsa bir kez daha dene
+        let created: any = null;
+        let createErr: any = null;
+        const payloadWithUserId = { ...baseProfile, user_id: user.id };
+        const { data: createdWithUid, error: createError1 } = await supabase
           .from('user_profiles')
-          .insert(newProfile)
+          .insert(payloadWithUserId)
           .select()
-          .single();
-        
-        if (createError) {
-          console.error('Profil oluşturma hatası:', createError);
-          setError('Profil oluşturulamadı.');
+          .maybeSingle();
+        if (!createError1 && createdWithUid) {
+          created = createdWithUid;
         } else {
-          data = createdProfile;
+          createErr = createError1;
+          const { data: createdNoUid, error: createError2 } = await supabase
+            .from('user_profiles')
+            .insert(baseProfile)
+            .select()
+            .maybeSingle();
+          if (!createError2 && createdNoUid) {
+            created = createdNoUid;
+            createErr = null;
+          } else if (createError2) {
+            createErr = createError2;
+          }
         }
-      } else if (error) {
-        console.error('Profil çekme hatası:', error);
-        setError('Profil yüklenirken hata oluştu.');
+
+        if (!created && createErr?.code === '23505') {
+          const retry = await tryFetch('id');
+          if (retry.data) {
+            profileData = retry.data;
+            createErr = null;
+          }
+        }
+
+        if (created) {
+          profileData = created;
+        } else {
+          console.error('Profil oluşturma hatası:', createErr);
+          setError('Profil oluşturulamadı.');
+        }
       }
 
-      if (data) {
-        setProfile(data);
-        setLocationSharing(data.location_sharing ?? true);
-        setProfileVisible(data.profile_visible ?? true);
-        setIndoorNavEnabled(data.indoor_nav_enabled ?? false);
-        setNicknameInput(data.nickname || '');
-        setCodeInput(data.user_code || '');
-        setCityVisible(data.city_visible ?? true);
-        setDominantCity(data.dominant_city || '');
-        setDominantCityHours(Number(data.dominant_city_hours) || 0);
-        setNearbyVisibility(data.nearby_visibility_enabled ?? true);
-        setMessagesOptIn(data.messages_opt_in ?? true);
-        setPhotoCaptureOptIn(data.photo_capture_opt_in ?? true);
-        setNicknameLocked(data.nickname_locked ?? false);
-        if (data.id) fetchDailyPhotoCount(data.id);
+      if (profileData) {
+        const meta = user.user_metadata || {};
+        const metaName = (meta.full_name || meta.name || [meta.given_name, meta.family_name].filter(Boolean).join(' ')).trim();
+        const metaAvatar = meta.picture || meta.avatar_url;
+        const metaGender = meta.gender || meta.sex;
+        if (!profileData.full_name && metaName) profileData.full_name = metaName;
+        if (!profileData.nickname && metaName) profileData.nickname = metaName;
+        if (!profileData.email && user.email) profileData.email = user.email;
+        if (!profileData.avatar_url && metaAvatar) profileData.avatar_url = metaAvatar;
+        if (!profileData.gender && metaGender) profileData.gender = metaGender;
+
+        const presence = {
+          location_sharing: Object.prototype.hasOwnProperty.call(profileData, 'location_sharing'),
+          profile_visible: Object.prototype.hasOwnProperty.call(profileData, 'profile_visible'),
+          indoor_nav_enabled: Object.prototype.hasOwnProperty.call(profileData, 'indoor_nav_enabled'),
+          nearby_visibility_enabled: Object.prototype.hasOwnProperty.call(profileData, 'nearby_visibility_enabled'),
+          messages_opt_in: Object.prototype.hasOwnProperty.call(profileData, 'messages_opt_in'),
+          photo_capture_opt_in: Object.prototype.hasOwnProperty.call(profileData, 'photo_capture_opt_in'),
+          nickname_locked: Object.prototype.hasOwnProperty.call(profileData, 'nickname_locked'),
+          can_bypass_photo_limit: Object.prototype.hasOwnProperty.call(profileData, 'can_bypass_photo_limit'),
+          city_visible: Object.prototype.hasOwnProperty.call(profileData, 'city_visible'),
+          dominant_city: Object.prototype.hasOwnProperty.call(profileData, 'dominant_city'),
+          dominant_city_hours: Object.prototype.hasOwnProperty.call(profileData, 'dominant_city_hours'),
+          about_me: Object.prototype.hasOwnProperty.call(profileData, 'about_me'),
+          is_online: Object.prototype.hasOwnProperty.call(profileData, 'is_online'),
+          birth_date: Object.prototype.hasOwnProperty.call(profileData, 'birth_date'),
+          gender: Object.prototype.hasOwnProperty.call(profileData, 'gender'),
+          age: Object.prototype.hasOwnProperty.call(profileData, 'age'),
+          hide_email: Object.prototype.hasOwnProperty.call(profileData, 'hide_email'),
+          admin_username: Object.prototype.hasOwnProperty.call(profileData, 'admin_username'),
+        } as Record<string, boolean>;
+        setAvailableFields(presence);
+
+        setProfile(profileData);
+        if (presence.location_sharing) setLocationSharing(profileData.location_sharing ?? true);
+        if (presence.profile_visible) setProfileVisible(profileData.profile_visible ?? true);
+        if (presence.indoor_nav_enabled) setIndoorNavEnabled(profileData.indoor_nav_enabled ?? false);
+        setNicknameInput(profileData.nickname || '');
+        setCodeInput(profileData.user_code || '');
+        if (presence.city_visible) setCityVisible(profileData.city_visible ?? true);
+        if (presence.dominant_city) setDominantCity(profileData.dominant_city || '');
+        if (presence.dominant_city_hours) setDominantCityHours(Number(profileData.dominant_city_hours) || 0);
+        if (presence.nearby_visibility_enabled) setNearbyVisibility(profileData.nearby_visibility_enabled ?? true);
+        if (presence.messages_opt_in) setMessagesOptIn(profileData.messages_opt_in ?? true);
+        if (presence.photo_capture_opt_in) setPhotoCaptureOptIn(profileData.photo_capture_opt_in ?? true);
+        if (presence.nickname_locked) setNicknameLocked(profileData.nickname_locked ?? false);
+        if (presence.about_me) setAboutMe(profileData.about_me || '');
+        if (presence.is_online) setIsOnline(profileData.location_sharing ?? true);
+        if (presence.birth_date) setBirthDate(profileData.birth_date ? convertToDisplayDate(profileData.birth_date) : '');
+        if (presence.gender) setGenderInput((profileData.gender as any) || '');
+        if (presence.hide_email) setHideEmail(profileData.hide_email ?? false);
+        const targetUserId = (profileData as any).user_id || profileData.id;
+        if (targetUserId) fetchDailyPhotoCount(targetUserId);
       }
 
       // Rozetleri çek (Eğer tablosu varsa)
@@ -188,22 +306,61 @@ export default function ProfileScreen() {
 
   const normalizeCode = (code: string) => code.trim().replace(/\s+/g, '').toUpperCase();
 
+  const handleBirthDateChange = (text: string) => {
+    // Sadece rakam ve nokta kabul et
+    let cleaned = text.replace(/[^\d.]/g, '');
+    
+    // Otomatik nokta ekleme: 08.09.1999 formatı için
+    if (cleaned.length === 2 && !cleaned.includes('.')) {
+      cleaned = cleaned + '.';
+    } else if (cleaned.length === 5 && cleaned.split('.').length === 2) {
+      cleaned = cleaned + '.';
+    }
+    
+    // Maksimum 10 karakter (DD.MM.YYYY)
+    if (cleaned.length > 10) {
+      cleaned = cleaned.substring(0, 10);
+    }
+    
+    setBirthDate(cleaned);
+  };
+
   const handleSave = async () => {
     if (!profile) return;
     setError('');
     setSuccessMsg('');
+    setNicknameError('');
+    setBirthDateError('');
+    setAboutMeError('');
 
     const nickname = nicknameInput.trim();
     const userCode = normalizeCode(codeInput);
 
+    // Nickname kontrolü
     if (!nickname.trim()) {
-      setError('Kullanıcı adı boş olamaz.');
+      setNicknameError('Kullanıcı adı boş olamaz.');
+      setSaving(false);
+      return;
+    }
+    
+    // Hakkımda alanı kontrolü
+    if (aboutMe.length > 200) {
+      setAboutMeError('En fazla 200 karakter olabilir.');
+      setSaving(false);
+      return;
+    }
+    
+    // Kod ve numara yasağı kontrolü
+    const codePattern = /\b[A-Z]{2,}\d{2,}|\d{3,}/i;
+    if (codePattern.test(aboutMe)) {
+      setAboutMeError('Kod veya numara yazamazsınız.');
+      setSaving(false);
       return;
     }
     
     // Nickname lock kontrolü
     if (profile.nickname_locked) {
-      setError('Kullanıcı adınız değiştirilemez (admin tarafından kilitlenmiş).');
+      setNicknameError('Kullanıcı adınız admin tarafından kilitlenmiş, değiştirilemez.');
       return;
     }
     
@@ -211,13 +368,27 @@ export default function ProfileScreen() {
     const isAdmin = profile.level >= 99; // Admin seviyesi kontrolü
     const nicknameValidation = validateNickname(nickname, isAdmin);
     if (!nicknameValidation.valid) {
-      setError(nicknameValidation.error || 'Geçersiz kullanıcı adı');
+      setNicknameError(nicknameValidation.error || 'Geçersiz kullanıcı adı');
       return;
     }
-    if (!/^[A-Za-z0-9_.-]{3,20}$/.test(userCode)) {
-      setError('Kod 3-20 karakter olmalı ve sadece harf, rakam, . _ - içerebilir.');
+    
+    // Doğum tarihi format kontrolü
+    if (birthDate && birthDate.length === 10) {
+      const parts = birthDate.split('.');
+      if (parts.length !== 3) {
+        setBirthDateError('Geçersiz format. Örnek: 08.09.1999');
+        return;
+      }
+      const [day, month, year] = parts.map(p => parseInt(p, 10));
+      if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > new Date().getFullYear()) {
+        setBirthDateError('Geçersiz tarih. Kontrol edin.');
+        return;
+      }
+    } else if (birthDate && birthDate.length > 0 && birthDate.length !== 10) {
+      setBirthDateError('10 karakter olmalı. Örnek: 08.09.1999');
       return;
     }
+    // Kullanıcı kodu sistem tarafından otomatik atanır, validasyon yok
 
     if (!isSupabaseConfigured) {
       setError('Supabase yapılandırılmadan profil kaydedilemez.');
@@ -233,48 +404,112 @@ export default function ProfileScreen() {
         .neq('id', profile.id)
         .maybeSingle();
       if (nicknameConflict) {
-        setError('Bu kullanıcı adı zaten kullanılıyor.');
+        setNicknameError('Bu kullanıcı adı zaten kullanılıyor.');
+        setSaving(false);
         return;
       }
+      
+      // Kullanıcı kodu otomatik atanır, conflict kontrolü yok
 
-      const { data: codeConflict } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('user_code', userCode)
-        .neq('id', profile.id)
-        .maybeSingle();
-      if (codeConflict) {
-        setError('Bu kullanıcı kodu zaten alınmış.');
-        return;
+      const updatePayload: Record<string, any> = {
+        nickname,
+      };
+      // `user_code` kolonu veritabanında yoksa gönderme (schema mismatch nedeniyle 400/406 hatası)
+      if (availableFields.user_code || Object.prototype.hasOwnProperty.call(profile, 'user_code')) {
+        updatePayload.user_code = userCode;
       }
+      if ('location_sharing' in profile) updatePayload.location_sharing = locationSharing;
+      if ('profile_visible' in profile) updatePayload.profile_visible = profileVisible;
+      if ('indoor_nav_enabled' in profile) updatePayload.indoor_nav_enabled = indoorNavEnabled;
+      if ('city_visible' in profile) updatePayload.city_visible = cityVisible;
+      if ('nearby_visibility_enabled' in profile) updatePayload.nearby_visibility_enabled = nearbyVisibility;
+      if ('messages_opt_in' in profile) updatePayload.messages_opt_in = messagesOptIn;
+      if ('photo_capture_opt_in' in profile) updatePayload.photo_capture_opt_in = photoCaptureOptIn;
+      if ('about_me' in profile) updatePayload.about_me = aboutMe;
+      if ('is_online' in profile) updatePayload.is_online = isOnline;
+      if ('birth_date' in profile) updatePayload.birth_date = birthDate ? convertToISODate(birthDate) : null;
+      if ('gender' in profile) updatePayload.gender = genderInput || null;
+      if ('age' in profile) updatePayload.age = birthDate ? calculateAge(convertToISODate(birthDate)) : null;
+      if ('hide_email' in profile) updatePayload.hide_email = hideEmail;
 
-      const { data, error: updateError } = await supabase
+      const primaryFilter = profile.id;
+      const secondaryFilter = (profile as any).user_id;
+
+      let updateRes = await supabase
         .from('user_profiles')
-        .update({
-          nickname,
-          user_code: userCode,
-          location_sharing: locationSharing,
-          profile_visible: profileVisible,
-          indoor_nav_enabled: indoorNavEnabled,
-          city_visible: cityVisible,
-          nearby_visibility_enabled: nearbyVisibility,
-          messages_opt_in: messagesOptIn,
-          photo_capture_opt_in: photoCaptureOptIn,
-        })
-        .eq('id', profile.id)
+        .update(updatePayload)
+        .eq('id', primaryFilter)
         .select()
-        .single();
+        .maybeSingle();
+
+      if ((updateRes.error || !updateRes.data) && secondaryFilter) {
+        updateRes = await supabase
+          .from('user_profiles')
+          .update(updatePayload)
+          .eq('user_id', secondaryFilter)
+          .select()
+          .maybeSingle();
+      }
+
+      // Eğer güncelleme hata verip hatada eksik kolon (ör. user_code) adı geçiyorsa,
+      // user_code'u payload'dan çıkarıp tekrar dene.
+      let { data, error: updateError } = updateRes;
+      if (updateError && /user_code/i.test(updateError.message)) {
+        // user_code kolonunu kaldır ve yeniden dene
+        if (updatePayload.user_code !== undefined) delete updatePayload.user_code;
+
+        let retryRes = await supabase
+          .from('user_profiles')
+          .update(updatePayload)
+          .eq('id', primaryFilter)
+          .select()
+          .maybeSingle();
+
+        if ((retryRes.error || !retryRes.data) && secondaryFilter) {
+          retryRes = await supabase
+            .from('user_profiles')
+            .update(updatePayload)
+            .eq('user_id', secondaryFilter)
+            .select()
+            .maybeSingle();
+        }
+
+        data = retryRes.data;
+        updateError = retryRes.error;
+      }
 
       if (updateError) {
         setError('Profil güncellenemedi: ' + updateError.message);
       } else if (data) {
+        const presence = {
+          location_sharing: Object.prototype.hasOwnProperty.call(data, 'location_sharing'),
+          profile_visible: Object.prototype.hasOwnProperty.call(data, 'profile_visible'),
+          indoor_nav_enabled: Object.prototype.hasOwnProperty.call(data, 'indoor_nav_enabled'),
+          nearby_visibility_enabled: Object.prototype.hasOwnProperty.call(data, 'nearby_visibility_enabled'),
+          messages_opt_in: Object.prototype.hasOwnProperty.call(data, 'messages_opt_in'),
+          photo_capture_opt_in: Object.prototype.hasOwnProperty.call(data, 'photo_capture_opt_in'),
+          nickname_locked: Object.prototype.hasOwnProperty.call(data, 'nickname_locked'),
+          can_bypass_photo_limit: Object.prototype.hasOwnProperty.call(data, 'can_bypass_photo_limit'),
+          city_visible: Object.prototype.hasOwnProperty.call(data, 'city_visible'),
+          dominant_city: Object.prototype.hasOwnProperty.call(data, 'dominant_city'),
+          dominant_city_hours: Object.prototype.hasOwnProperty.call(data, 'dominant_city_hours'),
+          about_me: Object.prototype.hasOwnProperty.call(data, 'about_me'),
+          is_online: Object.prototype.hasOwnProperty.call(data, 'is_online'),
+          birth_date: Object.prototype.hasOwnProperty.call(data, 'birth_date'),
+          gender: Object.prototype.hasOwnProperty.call(data, 'gender'),
+          age: Object.prototype.hasOwnProperty.call(data, 'age'),
+          hide_email: Object.prototype.hasOwnProperty.call(data, 'hide_email'),
+          admin_username: Object.prototype.hasOwnProperty.call(data, 'admin_username'),
+        } as Record<string, boolean>;
+        setAvailableFields(presence);
         setProfile(data as Profile);
-        setCityVisible(data.city_visible ?? true);
-        setDominantCity(data.dominant_city || '');
-        setDominantCityHours(Number(data.dominant_city_hours) || 0);
-        setNearbyVisibility(data.nearby_visibility_enabled ?? true);
-        setMessagesOptIn(data.messages_opt_in ?? true);
-        setPhotoCaptureOptIn(data.photo_capture_opt_in ?? true);
+        if (presence.city_visible) setCityVisible(data.city_visible ?? true);
+        if (presence.dominant_city) setDominantCity(data.dominant_city || '');
+        if (presence.dominant_city_hours) setDominantCityHours(Number(data.dominant_city_hours) || 0);
+        if (presence.nearby_visibility_enabled) setNearbyVisibility(data.nearby_visibility_enabled ?? true);
+        if (presence.messages_opt_in) setMessagesOptIn(data.messages_opt_in ?? true);
+        if (presence.photo_capture_opt_in) setPhotoCaptureOptIn(data.photo_capture_opt_in ?? true);
+        if (presence.hide_email) setHideEmail(data.hide_email ?? false);
         setSuccessMsg('Profil başarıyla güncellendi.');
       }
     } catch (e: any) {
@@ -323,6 +558,9 @@ export default function ProfileScreen() {
     ? pickFallbackAvatar(profile?.gender)
     : (profile?.avatar_url || pickFallbackAvatar(profile?.gender));
 
+  // Yaş gösteriminde DB'den gelen değer yoksa, formdaki doğum tarihinden hesapla
+  const displayedAge = profile?.age ?? (birthDate ? calculateAge(convertToISODate(birthDate)) : null);
+
   const cityBadgeUnlocked = dominantCity && dominantCityHours >= 15;
   const dailyLimit = profile?.can_bypass_photo_limit ? Infinity : 5;
   const photoUsageText = photoCountToday == null
@@ -333,14 +571,24 @@ export default function ProfileScreen() {
     <ScrollView style={styles.container}>
       <Text style={styles.title}>👤 Profil</Text>
       
+      {/* Admin Panel Button */}
+      {!loading && !error && profile?.email === 'ejderha112@gmail.com' && (
+        <TouchableOpacity
+          style={styles.adminPanelButton}
+          onPress={() => router.push('/AdminCentralPanel' as any)}
+        >
+          <Text style={styles.adminPanelText}>👑 Admin Kontrol Paneli</Text>
+        </TouchableOpacity>
+      )}
+      
       {loading && <Text style={styles.info}>Yükleniyor...</Text>}
       
       {error && (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>⚠️ {error}</Text>
           {!profile && (
-            <TouchableOpacity style={styles.button} onPress={() => router.push('/indoor')}>
-              <Text style={styles.buttonText}>Giriş Yap</Text>
+            <TouchableOpacity style={styles.button} onPress={fetchProfile}>
+              <Text style={styles.buttonText}>Tekrar Dene</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -354,13 +602,17 @@ export default function ProfileScreen() {
       
       {!loading && !error && profile && (
         <>
-          <Image source={{ uri: avatarUri }} style={styles.avatar} />
+          <View style={styles.avatarContainer}>
+            <Image source={{ uri: avatarUri }} style={styles.avatar} />
+            <View style={[styles.onlineIndicator, { backgroundColor: isOnline ? '#28a745' : '#6c757d' }]} />
+          </View>
           {avatarLocked ? (
             <Text style={styles.avatarHint}>Profil fotoğrafı seviyen 5 olduğunda Gmail hesabından otomatik olarak alınacak.</Text>
           ) : (
             <Text style={styles.avatarHint}>Gmail profil fotoğrafın senkron durumda.</Text>
           )}
           <Text style={styles.name}>{profile.nickname || 'İsimsiz Kullanıcı'}</Text>
+          <Text style={styles.onlineStatus}>{isOnline ? '🟢 Online' : '⚫ Offline'}</Text>
           <Text style={styles.info}>Email: {profile.email}</Text>
           <Text style={styles.info}>Seviye: {profile.level || 0}</Text>
           <Text style={styles.info}>XP: {profile.xp || 0}</Text>
@@ -369,124 +621,221 @@ export default function ProfileScreen() {
           <View style={styles.googleCard}>
             <Text style={styles.sectionTitle}>🔐 Google Profili</Text>
             <Text style={styles.googleText}>Ad Soyad: {profile.full_name || 'Google hesabı eşleniyor'}</Text>
-            <Text style={styles.googleText}>Yaş: {profile.show_age === false ? 'Gizli' : (profile.age ? `${profile.age}` : 'Belirtilmemiş')}</Text>
+            <Text style={styles.googleText}>Yaş: {profile.show_age === false ? 'Gizli' : (displayedAge != null ? `${displayedAge}` : 'Belirtilmemiş')}</Text>
             <Text style={styles.googleText}>Cinsiyet: {profile.show_gender === false ? 'Gizli' : (profile.gender || 'Belirtilmemiş')}</Text>
           </View>
 
-          <View style={styles.cityCard}>
-            <Text style={styles.sectionTitle}>🌆 En Aktif Şehir</Text>
-            {cityBadgeUnlocked ? (
-              <>
-                <Text style={styles.cityHighlight}>{dominantCity}</Text>
-                <Text style={styles.cityInfo}>Toplam {dominantCityHours.toFixed(1)} saat iç mekân açtın. Bu veri kilitlendi ve değiştirilemez.</Text>
-              </>
-            ) : (
-              <Text style={styles.cityInfo}>Herhangi bir şehirde en az 15 saat iç mekân açarak ev şehir rozetini kazan.</Text>
-            )}
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Arkadaşlar şehir etiketimi görebilsin</Text>
-                <Text style={styles.settingDesc}>Profilime giren arkadaşlarım bu alanı görüntüleyebilir.</Text>
+          {availableFields.city_visible && (
+            <View style={styles.cityCard}>
+              <Text style={styles.sectionTitle}>🌆 En Aktif Şehir</Text>
+              {cityBadgeUnlocked ? (
+                <>
+                  {cityVisible ? (
+                    <>
+                      <Text style={styles.cityHighlight}>{dominantCity}</Text>
+                      <Text style={styles.cityInfo}>Toplam {dominantCityHours.toFixed(1)} saat iç mekân açtın. Bu veri kilitlendi ve değiştirilemez.</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.cityInfo}>Şehir etiketi gizli (sadece sen görebilirsin: {dominantCity})</Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.cityInfo}>Herhangi bir şehirde en az 15 saat iç mekân açarak ev şehir rozetini kazan.</Text>
+              )}
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Arkadaşlar şehir etiketimi görebilsin</Text>
+                  <Text style={styles.settingDesc}>Profilime giren arkadaşlarım bu alanı görüntüleyebilir.</Text>
+                </View>
+                <Switch value={cityVisible} onValueChange={setCityVisible} />
               </View>
-              <Switch value={cityVisible} onValueChange={setCityVisible} />
             </View>
-          </View>
+          )}
 
           <Text style={styles.sectionTitle}>📝 Profil Bilgileri</Text>
           <Text style={styles.label}>Görünen İsim</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, nicknameError ? styles.inputError : null]}
             value={nicknameInput}
-            onChangeText={setNicknameInput}
+            onChangeText={(text) => { setNicknameInput(text); setNicknameError(''); }}
             placeholder="Kullanıcı adı"
             editable={!nicknameLocked}
             selectTextOnFocus={!nicknameLocked}
           />
-          {nicknameLocked && (
+          {nicknameError ? (
+            <Text style={styles.errorText}>⚠️ {nicknameError}</Text>
+          ) : nicknameLocked ? (
             <Text style={styles.helperText}>Bu kullanıcı adı moderasyon tarafından kilitlendi.</Text>
-          )}
-          <Text style={styles.label}>Kullanıcı Kodu</Text>
+          ) : null}
+
+          <Text style={styles.label}>Doğum Tarihi (Yaş otomatik hesaplanır)</Text>
           <TextInput
-            style={styles.input}
-            value={codeInput}
-            onChangeText={setCodeInput}
-            placeholder="Örn: EJDER112"
-            autoCapitalize="characters"
+            style={[styles.input, birthDateError ? styles.inputError : null]}
+            value={birthDate}
+            onChangeText={(text) => { handleBirthDateChange(text); setBirthDateError(''); }}
+            placeholder="DD.MM.YYYY (örn: 08.09.1999)"
+            maxLength={10}
           />
+          {birthDateError ? (
+            <Text style={styles.errorText}>⚠️ {birthDateError}</Text>
+          ) : (
+            <Text style={styles.helperText}>Yaş: {birthDate ? calculateAge(convertToISODate(birthDate)) : 'Belirtilmemiş'}</Text>
+          )}
 
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>📍 Konum Paylaşımı</Text>
-              <Text style={styles.settingDesc}>Diğer kullanıcılar konumumu görebilir</Text>
-            </View>
-            <Switch value={locationSharing} onValueChange={setLocationSharing} />
+          <Text style={styles.label}>Cinsiyet</Text>
+          <View style={styles.genderContainer}>
+            <TouchableOpacity
+              style={[styles.genderButton, genderInput === 'erkek' && styles.genderButtonActive]}
+              onPress={() => setGenderInput('erkek')}
+            >
+              <Text style={[styles.genderButtonText, genderInput === 'erkek' && styles.genderButtonTextActive]}>Erkek</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.genderButton, genderInput === 'kadın' && styles.genderButtonActive]}
+              onPress={() => setGenderInput('kadın')}
+            >
+              <Text style={[styles.genderButtonText, genderInput === 'kadın' && styles.genderButtonTextActive]}>Kadın</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.genderButton, genderInput === 'belirtmek istemiyorum' && styles.genderButtonActive]}
+              onPress={() => setGenderInput('belirtmek istemiyorum')}
+            >
+              <Text style={[styles.genderButtonText, genderInput === 'belirtmek istemiyorum' && styles.genderButtonTextActive]}>Belirtmek İstemiyorum</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>🛰️ Yakındaki Kullanıcılar</Text>
-              <Text style={styles.settingDesc}>500 m içindeki kişiler beni görebilsin</Text>
+          <Text style={styles.label}>Hakkımda (200 karakter)</Text>
+          <TextInput
+            style={[styles.input, styles.multiline, aboutMeError ? styles.inputError : null]}
+            value={aboutMe}
+            onChangeText={(text) => { setAboutMe(text); setAboutMeError(''); }}
+            placeholder="Kendini tanıt... (Kod/numara yasak)"
+            multiline
+            maxLength={200}
+            numberOfLines={4}
+          />
+          {aboutMeError ? (
+            <Text style={styles.errorText}>⚠️ {aboutMeError}</Text>
+          ) : (
+            <Text style={styles.helperText}>{aboutMe.length}/200 karakter</Text>
+          )}
+
+          {availableFields.location_sharing && (
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>📍 Konum Paylaşımı (Online/Offline)</Text>
+                <Text style={styles.settingDesc}>Açık: Online görünürsün. Kapalı: Offline görünürsün.</Text>
+              </View>
+              <Switch value={locationSharing} onValueChange={(val) => { setLocationSharing(val); setIsOnline(val); }} />
             </View>
-            <Switch
-              value={nearbyVisibility}
-              onValueChange={setNearbyVisibility}
-              disabled={!locationSharing}
-            />
-          </View>
-          {!locationSharing && (
+          )}
+
+          {availableFields.nearby_visibility_enabled && (
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>🛰️ Yakındaki Kullanıcılar</Text>
+                <Text style={styles.settingDesc}>500 m içindeki kişiler beni görebilsin</Text>
+              </View>
+              <Switch
+                value={nearbyVisibility}
+                onValueChange={setNearbyVisibility}
+                disabled={!locationSharing}
+              />
+            </View>
+          )}
+          {availableFields.nearby_visibility_enabled && !locationSharing && (
             <Text style={styles.helperText}>Konum paylaşımını açmadan bu ayar kullanılamaz.</Text>
           )}
 
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>💬 Mesaj İstekleri</Text>
-              <Text style={styles.settingDesc}>Yakındaki kişiler sohbet isteği gönderebilsin</Text>
-            </View>
-            <Switch value={messagesOptIn} onValueChange={setMessagesOptIn} />
-          </View>
-
-          <View style={styles.photoCard}>
+          {availableFields.messages_opt_in && (
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>📷 İç Mekan Fotoğrafları</Text>
-                <Text style={styles.settingDesc}>Sadece JPG yükleyebilir, günde 5 foto atarsın</Text>
+                <Text style={styles.settingLabel}>💬 Mesaj İstekleri</Text>
+                <Text style={styles.settingDesc}>Yakındaki kişiler sohbet isteği gönderebilsin</Text>
               </View>
-              <Switch value={photoCaptureOptIn} onValueChange={setPhotoCaptureOptIn} />
+              <Switch value={messagesOptIn} onValueChange={setMessagesOptIn} />
             </View>
-            {photoCaptureOptIn ? (
-              <Text style={styles.helperText}>
-                Bugünkü kullanım: {photoCountLoading ? 'yükleniyor...' : photoUsageText}
-              </Text>
-            ) : (
-              <Text style={styles.helperText}>Fotoğraf yüklemeyi devre dışı bıraktın.</Text>
-            )}
-            {profile?.can_bypass_photo_limit && (
-              <Text style={styles.helperText}>Admin yetkisi sayesinde limit uygulanmaz.</Text>
-            )}
-          </View>
+          )}
 
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>👁️ Profil Görünürlüğü</Text>
-              <Text style={styles.settingDesc}>Arkadaş aramalarında profilimi göster</Text>
+          {availableFields.photo_capture_opt_in && (
+            <View style={styles.photoCard}>
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>📷 İç Mekan Fotoğrafları</Text>
+                  <Text style={styles.settingDesc}>Sadece JPG yükleyebilir, günde 5 foto atarsın</Text>
+                </View>
+                <Switch value={photoCaptureOptIn} onValueChange={setPhotoCaptureOptIn} />
+              </View>
+              {photoCaptureOptIn ? (
+                <Text style={styles.helperText}>
+                  Bugünkü kullanım: {photoCountLoading ? 'yükleniyor...' : photoUsageText}
+                </Text>
+              ) : (
+                <Text style={styles.helperText}>Fotoğraf yüklemeyi devre dışı bıraktın.</Text>
+              )}
+              {profile?.can_bypass_photo_limit && (
+                <Text style={styles.helperText}>Admin yetkisi sayesinde limit uygulanmaz.</Text>
+              )}
             </View>
-            <Switch value={profileVisible} onValueChange={setProfileVisible} />
-          </View>
+          )}
 
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>🧭 İç Mekan Navigasyon</Text>
-              <Text style={styles.settingDesc}>Bina içi konum takibi</Text>
+          {availableFields.profile_visible && (
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>👁️ Profil Görünürlüğü</Text>
+                <Text style={styles.settingDesc}>Arkadaş aramalarında profilimi göster</Text>
+              </View>
+              <Switch value={profileVisible} onValueChange={setProfileVisible} />
             </View>
-            <Switch value={indoorNavEnabled} onValueChange={setIndoorNavEnabled} />
-          </View>
+          )}
+
+          {availableFields.hide_email && (
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>📧 Mail Adresi Gizleme</Text>
+                <Text style={styles.settingDesc}>E-posta adresimi diğer kullanıcılardan gizle</Text>
+              </View>
+              <Switch value={hideEmail} onValueChange={setHideEmail} />
+            </View>
+          )}
+          {availableFields.hide_email && hideEmail && (
+            <Text style={styles.helperText}>Mail adresin gizli. Kullanıcılar sadece nickname ve user_code ile bulabilir.</Text>
+          )}
+
+          {availableFields.admin_username && profile?.admin_username && (
+            <View style={styles.adminCard}>
+              <Text style={styles.sectionTitle}>👑 Admin Bilgileri</Text>
+              <Text style={styles.adminText}>Kullanıcı Adı: {profile.admin_username}</Text>
+              <Text style={styles.helperText}>Kullanıcılar seni "{profile.admin_username}" ile arayabilir. Mail adresin kimseye görünmez.</Text>
+            </View>
+          )}
+
+          {availableFields.indoor_nav_enabled && (
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>🧭 İç Mekan Navigasyon</Text>
+                <Text style={styles.settingDesc}>Bina içi konum takibi</Text>
+              </View>
+              <Switch value={indoorNavEnabled} onValueChange={setIndoorNavEnabled} />
+            </View>
+          )}
+
+          {badges.length > 0 && (
+            <>
+              <Text style={styles.badgeTitle}>🏆 Rozetler</Text>
+              <FlatList
+                data={badges}
+                keyExtractor={item => item.id}
+                horizontal
+                renderItem={({ item }) => (
+                  <Image source={{ uri: item.icon_url }} style={styles.badge} />
+                )}
+              />
+            </>
+          )}
 
           <TouchableOpacity style={styles.button} onPress={handleSave} disabled={saving}>
             <Text style={styles.buttonText}>{saving ? 'Kaydediliyor...' : 'Kaydet'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.button, { backgroundColor: '#dc3545', marginTop: 20 }]} onPress={handleSignOut}>
-            <Text style={styles.buttonText}>Çıkış Yap</Text>
           </TouchableOpacity>
         </>
       )}
@@ -494,19 +843,6 @@ export default function ProfileScreen() {
       {!loading && !error && !profile && (
         <Text style={styles.info}>Profil verisi bulunamadı.</Text>
       )}
-      
-      <Text style={styles.badgeTitle}>🏆 Rozetler</Text>
-      <FlatList
-        data={badges}
-        keyExtractor={item => item.id}
-        horizontal
-        renderItem={({ item }) => (
-          <Image source={{ uri: item.icon_url }} style={styles.badge} />
-        )}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>Henüz rozet kazanılmadı</Text>
-        }
-      />
 
       <View style={styles.navigationSection}>
         <Text style={styles.sectionTitle}>🗺️ Navigasyon Özellikleri</Text>
@@ -538,7 +874,76 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.navButton} onPress={() => router.push('/AddFriendScreen' as any)}>
           <Text style={styles.navButtonText}>🔎 Arkadaş Bul</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navButton} onPress={() => router.push('/NotificationsScreen' as any)}>
+          <Text style={styles.navButtonText}>🔔 Bildirimler</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navButton} onPress={() => router.push('/NotificationSettingsScreen' as any)}>
+          <Text style={styles.navButtonText}>⚙️ Bildirim Ayarları</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.navButton} onPress={() => router.push('/SuggestVenueScreen' as any)}>
+          <Text style={styles.navButtonText}>🏥 Mekan Öner (Hastane/AVM)</Text>
+        </TouchableOpacity>
+
+        {/* Admin Panel - Sadece ejderha112@gmail.com için */}
+        {profile?.email === 'ejderha112@gmail.com' && (
+          <>
+            <TouchableOpacity 
+              style={[styles.navButton, { backgroundColor: '#28a745', borderColor: '#28a745' }]}
+              onPress={() => router.push('/AdminVenueModerationScreen' as any)}
+            >
+              <Text style={styles.navButtonText}>🗺️ Mekan Önerileri Moderasyonu</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.navButton, { backgroundColor: '#dc3545', borderColor: '#dc3545' }]} 
+              onPress={() => router.push('/AdminIndoorMapEditorScreen' as any)}
+            >
+              <Text style={[styles.navButtonText, { color: '#fff' }]}>🗺️ Admin: Harita Editörü</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.navButton, { backgroundColor: '#dc3545', borderColor: '#dc3545' }]} 
+              onPress={() => router.push('/AdminReportModerationScreen' as any)}
+            >
+              <Text style={[styles.navButtonText, { color: '#fff' }]}>🚨 Kullanıcı Şikayetleri</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.navButton, { backgroundColor: '#007AFF', borderColor: '#007AFF' }]} 
+              onPress={() => router.push('/AdminNotificationPanel' as any)}
+            >
+              <Text style={[styles.navButtonText, { color: '#fff' }]}>🔔 Bildirim Paneli</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.navButton, { backgroundColor: '#28a745', borderColor: '#28a745' }]} 
+              onPress={() => router.push('/AdminMapEditorScreen' as any)}
+            >
+              <Text style={[styles.navButtonText, { color: '#fff' }]}>🗺️ Kroki & Adres Editör</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.navButton, { backgroundColor: '#6f42c1', borderColor: '#6f42c1' }]} 
+              onPress={() => router.push('/AdminDataManagementPanel' as any)}
+            >
+              <Text style={[styles.navButtonText, { color: '#fff' }]}>📊 Data Yönetim Paneli</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
+
+      {/* Çıkış Yap butonu en altta */}
+      {!loading && !error && profile && (
+        <TouchableOpacity 
+          style={[styles.button, { backgroundColor: '#dc3545', marginTop: 20, marginBottom: 30 }]} 
+          onPress={handleSignOut}
+        >
+          <Text style={styles.buttonText}>Çıkış Yap</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
@@ -546,15 +951,35 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
   title: { fontSize: 22, fontWeight: 'bold' as const, marginBottom: 15 },
-  avatar: { width: 100, height: 100, borderRadius: 50, alignSelf: 'center', marginVertical: 10 },
-  name: { fontSize: 20, fontWeight: 'bold' as const, textAlign: 'center', marginVertical: 10 },
+  adminPanelButton: {
+    backgroundColor: '#2c3e50',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  adminPanelText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700' as const,
+    textAlign: 'center',
+  },
+  avatarContainer: { alignSelf: 'center', position: 'relative', marginVertical: 10 },
+  avatar: { width: 100, height: 100, borderRadius: 50 },
+  onlineIndicator: { position: 'absolute', bottom: 5, right: 5, width: 20, height: 20, borderRadius: 10, borderWidth: 3, borderColor: '#fff' },
+  name: { fontSize: 20, fontWeight: 'bold' as const, textAlign: 'center', marginTop: 10 },
+  onlineStatus: { fontSize: 14, color: '#555', textAlign: 'center', marginBottom: 10 },
   avatarHint: { fontSize: 12, color: '#777', textAlign: 'center', marginBottom: 6 },
   info: { fontSize: 14, color: '#666', textAlign: 'center', marginVertical: 5 },
   badgeTitle: { marginTop: 20, fontSize: 16, fontWeight: 'bold' as const, marginBottom: 10 },
   badge: { width: 50, height: 50, marginRight: 10 },
   emptyText: { fontSize: 14, color: '#999', fontStyle: 'italic' as const },
   errorBox: { backgroundColor: '#fee', padding: 15, borderRadius: 8, marginVertical: 10 },
-  errorText: { color: '#c00', fontSize: 14 },
+  errorText: { color: '#dc3545', fontSize: 13, fontWeight: '600' as const, marginTop: -8, marginBottom: 8 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold' as const, marginBottom: 15, marginTop: 20 },
   label: { fontSize: 14, fontWeight: '600' as const, marginBottom: 4 },
   settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
@@ -562,10 +987,14 @@ const styles = StyleSheet.create({
   settingLabel: { fontSize: 16, fontWeight: '600' as const, marginBottom: 4 },
   settingDesc: { fontSize: 12, color: '#888' },
   input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 12 },
+  inputError: { borderColor: '#dc3545', borderWidth: 2, backgroundColor: '#fff5f5' },
+  multiline: { minHeight: 80, textAlignVertical: 'top' },
   successBox: { backgroundColor: '#e9f9ee', padding: 12, borderRadius: 8, marginBottom: 12 },
   successText: { color: '#0a7a2e', textAlign: 'center' },
   googleCard: { padding: 16, borderWidth: 1, borderColor: '#eee', borderRadius: 12, marginTop: 10 },
   googleText: { fontSize: 14, marginBottom: 6, color: '#333' },
+  adminCard: { padding: 16, borderWidth: 2, borderColor: '#007AFF', borderRadius: 12, marginTop: 18, backgroundColor: '#e9f5ff' },
+  adminText: { fontSize: 15, marginBottom: 6, color: '#333', fontWeight: '600' as const },
   cityCard: { padding: 16, borderWidth: 1, borderColor: '#eee', borderRadius: 12, marginTop: 18 },
   cityHighlight: { fontSize: 20, fontWeight: '700' as const, textAlign: 'center', marginBottom: 6 },
   cityInfo: { fontSize: 13, color: '#555', textAlign: 'center', marginBottom: 10 },
@@ -574,4 +1003,11 @@ const styles = StyleSheet.create({
   navButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' as const, textAlign: 'center' },
   helperText: { fontSize: 12, color: '#777', marginBottom: 8, marginTop: -4 },
   photoCard: { borderWidth: 1, borderColor: '#eee', borderRadius: 12, paddingHorizontal: 12, marginTop: 12, backgroundColor: '#fafafa' },
+  button: { backgroundColor: '#007AFF', padding: 15, borderRadius: 8, marginTop: 10 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' as const, textAlign: 'center' },
+  genderContainer: { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
+  genderButton: { flex: 1, minWidth: 100, padding: 12, borderRadius: 8, borderWidth: 2, borderColor: '#ccc', backgroundColor: '#fff' },
+  genderButtonActive: { borderColor: '#007AFF', backgroundColor: '#e9f5ff' },
+  genderButtonText: { fontSize: 14, fontWeight: '600' as const, textAlign: 'center', color: '#666' },
+  genderButtonTextActive: { color: '#007AFF' },
 });

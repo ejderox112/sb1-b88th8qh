@@ -48,10 +48,10 @@ export function validateNickname(nickname: string, isAdmin: boolean = false): { 
     return { valid: false, error: 'Bu nickname korunmuştur ve kullanılamaz' };
   }
   
-  // Geçerli karakterler: harf, rakam, alt çizgi, tire
-  const validPattern = /^[a-zA-ZğüşıöçĞÜŞİÖÇ0-9_-]+$/;
+  // Geçerli karakterler: harf, rakam, alt çizgi, tire, boşluk
+  const validPattern = /^[a-zA-ZğüşıöçĞÜŞİÖÇ0-9_\-\s]+$/;
   if (!validPattern.test(nickname)) {
-    return { valid: false, error: 'Nickname sadece harf, rakam, _ ve - içerebilir' };
+    return { valid: false, error: 'Nickname sadece harf, rakam, _ - ve boşluk içerebilir' };
   }
   
   return { valid: true };

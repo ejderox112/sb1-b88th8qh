@@ -4,6 +4,7 @@ import ErrorMessage from '@/components/ErrorMessage';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { getTopSupportersWithProfile } from '@/lib/supporterTopLogic';
 // Removed inline imports for heavy lists to avoid nested VirtualizedList warnings
 
 export default function LocationsScreen() {
@@ -35,7 +36,6 @@ export default function LocationsScreen() {
 
   const fetchTopSupporters = async (projectId: string) => {
     try {
-      const { getTopSupportersWithProfile } = await import('@/lib/supporterTopLogic');
       const { data, error } = await getTopSupportersWithProfile(projectId);
       if (error) throw error;
       setSupportersByProject((prev) => ({ ...prev, [projectId]: data || [] }));
@@ -158,6 +158,10 @@ export default function LocationsScreen() {
     router.push('/AddFriendScreen');
   };
 
+  const openBusinessAdPanel = () => {
+    router.push('/BusinessAdPanelScreen');
+  };
+
   const isAdmin = userRole === 'admin';
 
   const stages = useMemo(() => ([
@@ -226,79 +230,100 @@ export default function LocationsScreen() {
           const supporters = supportersByProject[proj.id] || [];
           return (
             <View key={proj.id} style={styles.projectCard}>
-            <Text style={styles.projectTitle}>{idx+1}. {proj.name}</Text>
-            <Text style={styles.projectSupportInfo}>
-              Bu projeye toplam {supporters.length} kayıtlı destek var.
-            </Text>
-            <View style={styles.donateRow}>
-              {[50, 100, 250].map((amount) => (
-                <TouchableOpacity
-                  key={amount}
-                  style={[styles.donateButton, donationLoadingProject === proj.id && styles.donateButtonDisabled]}
-                  onPress={() => handleMockDonate(proj.id, amount)}
-                  disabled={donationLoadingProject === proj.id}
-                >
-                  <Text style={styles.donateButtonText}>{amount} TL</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity style={styles.voteButton} onPress={() => {/* TODO: Voting integration */}}>
-              <Text style={styles.voteButtonText}>Oy Ver (Sıradaki Harita)</Text>
-            </TouchableOpacity>
-            {/* En Büyük Destekçilerimiz */}
-            <View style={styles.supportersBox}>
-                <Text style={styles.supportersTitle}>En Büyük Destekçilerimiz (Top 3)</Text>
-                <View style={styles.supportersList}>
-                  {supporters.length === 0 ? (
-                    <Text style={styles.supporterItem}>Henüz destekçi yok.</Text>
-                  ) : (
-                    supporters.map((sup) => (
-                      <View key={`${proj.id}-${sup.user_id}`} style={styles.supporterRow}>
-                        {sup.avatar_url ? (
-                          <Image source={{ uri: sup.avatar_url }} style={styles.supporterAvatar} />
-                        ) : null}
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.supporterName}>{sup.nickname ?? 'Anonim Destekçi'}</Text>
-                          <Text style={styles.supporterAmount}>{sup.amount} TL</Text>
+              <Text style={styles.projectTitle}>{idx+1}. {proj.name}</Text>
+              <Text style={styles.projectSupportInfo}>
+                Bu projeye toplam {supporters.length} kayıtlı destek var.
+              </Text>
+              <Text style={styles.premiumInfo}>
+                Destek olup <Text style={{fontWeight:'bold',color:'#FFD700'}}>premium</Text> rozeti ve <Text style={{fontWeight:'bold',color:'#00d4ff'}}>bağışçı</Text> rozeti kazanmak ister misiniz?
+              </Text>
+              <TouchableOpacity
+                style={styles.donateButton}
+                onPress={() => handleMockDonate(proj.id, 0)}
+                disabled={donationLoadingProject === proj.id}
+              >
+                <Text style={styles.donateButtonText}>Destek Ol / Katkı Sağla</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.voteButton} onPress={() => {/* TODO: Voting integration */}}>
+                <Text style={styles.voteButtonText}>Oy Ver (Sıradaki Harita)</Text>
+              </TouchableOpacity>
+              {/* En Büyük Destekçilerimiz */}
+              <View style={styles.supportersBox}>
+                  <Text style={styles.supportersTitle}>En Büyük Destekçilerimiz (Top 3)</Text>
+                  <View style={styles.supportersList}>
+                    {supporters.length === 0 ? (
+                      <Text style={styles.supporterItem}>Henüz destekçi yok.</Text>
+                    ) : (
+                      supporters.map((sup) => (
+                        <View key={`${proj.id}-${sup.user_id}`} style={styles.supporterRow}>
+                          {sup.avatar_url ? (
+                            <Image source={{ uri: sup.avatar_url }} style={styles.supporterAvatar} />
+                          ) : null}
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.supporterName}>
+                              {(sup.show_name || false) ? (sup.nickname ?? 'Destekçi') : 'Anonim Destekçi'}
+                            </Text>
+                            {/* <Text style={styles.supporterAmount}>{sup.amount} TL</Text> */}
+                            {(sup.is_top3 || false) && (
+                              <TouchableOpacity
+                                style={styles.showNameButton}
+                                onPress={async () => {
+                                  try {
+                                    // Kullanıcı kendi ismini paylaşmak istiyorsa
+                                    if (!userId || userId !== sup.user_id) throw new Error('Sadece kendi ismini paylaşabilirsin.');
+                                    await supabase.from('supporters').update({ show_name: true }).eq('user_id', userId).eq('project_id', proj.id);
+                                    setSupporterMsg('İsmin başarıyla paylaşıldı.');
+                                  } catch (e: any) {
+                                    setErrorMsg('İsim paylaşma başarısız: ' + (e?.message || 'Bilinmeyen hata'));
+                                  }
+                                }}
+                              >
+                                <Text style={styles.showNameText}>İsmimi Paylaş</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                          <TouchableOpacity
+                            style={[styles.likeButton, sup.liked_by_user ? styles.likeButtonDisabled : null]}
+                            disabled={sup.liked_by_user}
+                            onPress={async () => {
+                              try {
+                                if (!userId) throw new Error('Önce giriş yapın.');
+                                if (sup.liked_by_user) return;
+                                const { likeSupporter } = await import('@/lib/supporterLogic');
+                                await likeSupporter(sup.user_id, userId, proj.id);
+                                setSupporterMsg('Destekçiye like gönderdiniz.');
+                              } catch (e: any) {
+                                setErrorMsg('Like işlemi başarısız: ' + (e?.message || 'Bilinmeyen hata'));
+                              }
+                            }}
+                          >
+                            <Text style={styles.likeText}>👍</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.dislikeButton, sup.disliked_by_user ? styles.dislikeButtonDisabled : null]}
+                            disabled={sup.disliked_by_user}
+                            onPress={async () => {
+                              try {
+                                if (!userId) throw new Error('Önce giriş yapın.');
+                                if (sup.disliked_by_user) return;
+                                const { dislikeSupporter } = await import('@/lib/supporterLogic');
+                                await dislikeSupporter(sup.user_id, userId, proj.id);
+                                setSupporterMsg('Geri bildirim gönderildi.');
+                              } catch (e: any) {
+                                setErrorMsg('Dislike işlemi başarısız: ' + (e?.message || 'Bilinmeyen hata'));
+                              }
+                            }}
+                          >
+                            <Text style={styles.dislikeText}>👎</Text>
+                          </TouchableOpacity>
                         </View>
-                        <TouchableOpacity
-                          style={styles.likeButton}
-                          onPress={async () => {
-                            try {
-                              if (!userId) throw new Error('Önce giriş yapın.');
-                              const { likeSupporter } = await import('@/lib/supporterLogic');
-                              await likeSupporter(sup.user_id, userId);
-                              setSupporterMsg('Destekçiye like gönderdiniz.');
-                            } catch (e: any) {
-                              setErrorMsg('Like işlemi başarısız: ' + (e?.message || 'Bilinmeyen hata'));
-                            }
-                          }}
-                        >
-                          <Text style={styles.likeText}>👍</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.dislikeButton}
-                          onPress={async () => {
-                            try {
-                              if (!userId) throw new Error('Önce giriş yapın.');
-                              const { dislikeSupporter } = await import('@/lib/supporterLogic');
-                              await dislikeSupporter(sup.user_id, userId);
-                              setSupporterMsg('Geri bildirim gönderildi.');
-                            } catch (e: any) {
-                              setErrorMsg('Dislike işlemi başarısız: ' + (e?.message || 'Bilinmeyen hata'));
-                            }
-                          }}
-                        >
-                          <Text style={styles.dislikeText}>👎</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))
-                  )}
-                      <ErrorMessage message={errorMsg} />
-                </View>
-                <Text style={styles.supportersInfo}>Bu projeye en çok destek veren 3 kişi özel rozet kazanır.</Text>
+                      ))
+                    )}
+                        <ErrorMessage message={errorMsg} />
+                  </View>
+                  <Text style={styles.supportersInfo}>Bu projeye en çok destek veren 3 kişi özel rozet kazanır.</Text>
+              </View>
             </View>
-          </View>
           );
         })}
         {supporterMsg ? <Text style={styles.supportSuccess}>{supporterMsg}</Text> : null}
@@ -344,11 +369,43 @@ export default function LocationsScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Konumunuza Özel Reklam Verin */}
+      <View style={styles.adSection}>
+        <Text style={styles.adSectionTitle}>📢 Konumunuza Özel Reklam Verin</Text>
+        <Text style={styles.adSectionDesc}>
+          İşletme sahibiyseniz, konumunuza özel video reklam oluşturun. 
+          Yakındaki kullanıcılara görüntülensin, tıklama başına ödeme yapın!
+        </Text>
+        
+        <View style={styles.adFeatures}>
+          <Text style={styles.adFeature}>✅ YouTube, Instagram, Facebook video entegrasyonu</Text>
+          <Text style={styles.adFeature}>✅ İzlenme: 0.10 TL | Tıklama: 0.50 TL</Text>
+          <Text style={styles.adFeature}>✅ 5 saniye sonra atlanabilir</Text>
+          <Text style={styles.adFeature}>✅ Her reklam izleyene 5 XP kazandırın</Text>
+          <Text style={styles.adFeature}>✅ Konum, saat, gün bazlı detaylı istatistikler</Text>
+          <Text style={styles.adFeature}>✅ Admin onayı sonrası yayına girer</Text>
+        </View>
+
+        <TouchableOpacity style={styles.adButton} onPress={openBusinessAdPanel}>
+          <Text style={styles.adButtonText}>🚀 Reklam Kampanyası Başlat</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.adNote}>
+          Premium üyeler reklam istatistiklerinde %5 bonus, Premium Plus üyeler %10 bonus kazanır.
+        </Text>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+    premiumInfo: {
+      fontSize: 14,
+      color: '#FFD700',
+      textAlign: 'center',
+      marginVertical: 8,
+    },
   container: {
     flex: 1,
     backgroundColor: '#1a1d22',
@@ -695,5 +752,80 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     alignItems: 'center',
+  },
+  adSection: {
+    backgroundColor: '#2a2d32',
+    padding: 18,
+    borderRadius: 12,
+    marginVertical: 20,
+    borderWidth: 2,
+    borderColor: '#FF9500',
+  },
+  adSectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FF9500',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  adSectionDesc: {
+    fontSize: 15,
+    color: '#ffddaa',
+    lineHeight: 22,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  adFeatures: {
+    backgroundColor: '#23272e',
+    padding: 14,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  adFeature: {
+    fontSize: 14,
+    color: '#d8d8d8',
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  adButton: {
+    backgroundColor: '#FF9500',
+    paddingVertical: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#FF9500',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  adButtonText: {
+    color: '#1a1d22',
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  adNote: {
+    fontSize: 13,
+    color: '#b0b3b8',
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  likeButtonDisabled: {
+    opacity: 0.5,
+  },
+  dislikeButtonDisabled: {
+    opacity: 0.5,
+  },
+  showNameButton: {
+    backgroundColor: '#00d4ff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  showNameText: {
+    color: '#1a1d22',
+    fontWeight: '700',
+    fontSize: 12,
   },
 });
