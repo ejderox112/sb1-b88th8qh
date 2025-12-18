@@ -27,6 +27,17 @@ export default function GoogleSignInButton() {
   });
 
   useEffect(() => {
+    try {
+      const proxyUri = makeRedirectUri({ useProxy: true, projectNameForProxy: 'bolt-expo-nativewind' });
+      const noProxyUri = makeRedirectUri({ useProxy: false });
+      console.log('[AuthDebug] Google redirectUri (proxy)=', proxyUri);
+      console.log('[AuthDebug] Google redirectUri (no proxy)=', noProxyUri);
+    } catch (e) {
+      console.warn('[AuthDebug] Failed to compute redirect URIs', e);
+    }
+  }, []);
+
+  useEffect(() => {
     if (response?.type === 'success') {
       // handle success (exchange code / get token)
       // left as an exercise to the app flow (supabase/auth etc.)
