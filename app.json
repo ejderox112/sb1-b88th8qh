@@ -2,7 +2,7 @@
   "expo": {
     "name": "bolt-expo-nativewind",
     "slug": "bolt-expo-nativewind",
-    "owner": "ejderox112",
+    "owner": "ejderhaox112",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -17,7 +17,11 @@
       "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "1033668982412-rper29qh08sc2gievscljuiikpmhuc4k.apps.googleusercontent.com",
       "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "1033668982412-rper29qh08sc2gievscljuiikpmhuc4k.apps.googleusercontent.com",
       "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1033668982412-rper29qh08sc2gievscljuiikpmhuc4k.apps.googleusercontent.com",
-      "EXPO_PUBLIC_DEMO_EMAIL": "test@example.com"
+      "EXPO_PUBLIC_DEMO_EMAIL": "test@example.com",
+      "router": {},
+      "eas": {
+        "projectId": "77d7cf8a-bd42-40b5-87ad-bccc868c211b"
+      }
     },
     "ios": {
       "supportsTablet": true
