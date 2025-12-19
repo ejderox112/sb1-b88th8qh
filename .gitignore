@@ -60,3 +60,8 @@ target/
 *-dependency-updates.txt
 *-dependencies.txt
 npm-audit.json
+dependabot-alerts.json
+codescan-alerts.json
+tmp-*.json
+npm-audit-*.json
+.vscode/**/history
