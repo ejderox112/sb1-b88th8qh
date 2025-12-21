@@ -1,13 +1,22 @@
 {
-  "version": 2,
-  "builds": [
+  "buildCommand": "npm run build:web",
+  "outputDirectory": "web-build",
+  "framework": null,
+  "rewrites": [
     {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "web-build" }
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ],
-  "routes": [
-    { "src": "/(.*)", "dest": "/$1" }
+  "headers": [
+    {
+      "source": "/(.*).(js|css|woff|woff2|ttf|otf|eot|svg|png|jpg|jpeg|gif|webp|ico)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    }
   ]
 }
