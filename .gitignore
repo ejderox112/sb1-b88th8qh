@@ -49,6 +49,12 @@ yarn-error.*
 .env*.local
 .env
 
+# mobile credentials (local only)
+credentials.json
+credentials.json.base64
+android/keystores/
+ios/certs/
+
 # typescript
 *.tsbuildinfo
 

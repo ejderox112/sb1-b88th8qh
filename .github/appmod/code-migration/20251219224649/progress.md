@@ -21,6 +21,16 @@
   - `java-service-17` - all tests passed
   - `java-service` - all tests passed
 
-- [⌛️] Next: Commit changes and open PR
+-- [⌛️] Next: Commit changes and open PR
 
-Current in-progress task: Commit changes and open PR
+- [✅] PR merged: pull request #15 was rebased and merged into `main` and remote branch deleted
+
+- [✅] Local cleanup: switched to `main`, pulled latest from `origin/main`, pruned remotes and removed local `appmod/java-migration-20251219224649` branch
+
+Final status: [✅] Migration completed for Java 21 (basic checks, build and tests passed)
+
+- [✅] POM updates: updated `java-service` and `java-service-17` `maven.compiler.source/target` and `maven-compiler-plugin` `<release>` to `21`, committed on `main`.
+
+- [✅] Build verification: rebuilt updated modules successfully after POM changes.
+
+- [⌛️] CVE scan: no Java dependencies declared in POMs to scan (no action required). If you want, I can run a project-wide dependency scan after you add/upgrade dependencies.
