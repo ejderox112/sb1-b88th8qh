@@ -5,8 +5,8 @@
   "main": "expo-router/entry",
   "scripts": {
     "dev": "npx expo start",
-    "build": "expo export --platform web",
-    "build:web": "expo export --platform web",
+    "build": "expo export --platform web --output-dir web-build",
+    "build:web": "expo export --platform web --output-dir web-build",
     "lint": "expo lint",
     "test": "echo \"No tests specified\" && exit 0",
     "android": "expo run:android",

@@ -289,32 +289,28 @@ export default function IndoorNavScreen() {
       'MISSING_ANDROID_CLIENT_ID';
     const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || undefined;
     const isWeb = Platform.OS === 'web';
-    // Revert to authorization code (PKCE) flow for web/native and force the
-    // Expo proxy redirect on web so behavior matches the previously working setup.
+    // Use PKCE+code flow for all platforms, but do NOT force the Expo proxy on web.
+    // On web prefer a browser-native redirect (makeRedirectUri) to match the
+    // Authorized Redirect URIs configured in Google Console (localhost or ngrok).
     const responseTypeForPlatform = 'code';
+    const useProxyForPlatform = !isWeb;
+    const redirectUriForPlatform = isWeb ? webRedirectUri : forcedExpoProxyRedirect;
     const tuple = Google.useAuthRequest({
       expoClientId,
       androidClientId,
       iosClientId,
       webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      // Use authorization code + PKCE flow to satisfy Google's security requirements
-      // Web'de Google token endpoint'ine tarayıcıdan code exchange yapmak CORS vb.
-      // sebeplerle sorun çıkarabildiği için web'de implicit (id_token) akışını tercih ediyoruz.
-      // Native/Expo Go'da ise PKCE + code akışı güvenli ve stabil.
       responseType: responseTypeForPlatform,
       scopes: ['openid', 'profile', 'email'],
-      // Request offline access and force consent so Google shows the consent
-      // screen. Use PKCE for all platforms. For web we force the Expo proxy
-      // redirect so the auth flow matches the previous working setup.
       extraParams: {
         access_type: 'offline',
         prompt: 'consent',
         include_granted_scopes: 'true',
       },
-      redirectUri: forcedExpoProxyRedirect,
+      redirectUri: redirectUriForPlatform,
       usePKCE: true,
-      useProxy: true,
-      projectNameForProxy: projectSlug,
+      useProxy: useProxyForPlatform,
+      projectNameForProxy: useProxyForPlatform ? projectSlug : undefined,
     });
     request = tuple[0];
     response = tuple[1];
